@@ -1,0 +1,155 @@
+<?php
+
+use App\Http\Controllers\Admin\AuditController;
+use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\BenevoleController;
+use App\Http\Controllers\BudgetController;
+use App\Http\Controllers\CommunicationController;
+use App\Http\Controllers\CrmController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DocumentController;
+use App\Http\Controllers\DotationController;
+use App\Http\Controllers\EnqueteController;
+use App\Http\Controllers\EvenementController;
+use App\Http\Controllers\IntervenantController;
+use App\Http\Controllers\InscriptionController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PaiementController;
+use App\Http\Controllers\ParticipantController;
+use App\Http\Controllers\PresenceController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\RapportController;
+use App\Http\Controllers\RessourceController;
+use App\Http\Controllers\SatisfactionController;
+use App\Http\Controllers\TarifController;
+use App\Http\Controllers\TacheController;
+use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
+
+Route::get('/', function () {
+    if (auth()->check()) {
+        return redirect()->route('evenements.index');
+    }
+
+    return Inertia::render('Welcome', [
+        'canLogin' => Route::has('login'),
+        'canRegister' => Route::has('register'),
+        'laravelVersion' => Application::VERSION,
+        'phpVersion' => PHP_VERSION,
+    ]);
+});
+
+Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth', 'verified'])->name('dashboard');
+
+Route::middleware('auth')->group(function () {
+    Route::resource('evenements', EvenementController::class);
+    Route::get('evenements/{evenement}/inscrire', [InscriptionController::class, 'create'])->name('evenements.inscrire');
+    Route::get('evenements/{evenement}/export-participants', [InscriptionController::class, 'export'])->name('evenements.export-participants');
+    Route::resource('inscriptions', InscriptionController::class)->except(['edit', 'update']);
+    Route::post('inscriptions/{inscription}/paiement', [PaiementController::class, 'initier'])->name('paiements.initier');
+    Route::post('paiements/callback', [PaiementController::class, 'callback'])->name('paiements.callback')->withoutMiddleware('auth');
+    Route::get('paiements/{paiement}', [PaiementController::class, 'show'])->name('paiements.show');
+    Route::resource('participants', ParticipantController::class)->only(['index', 'show']);
+    Route::post('participants/import', [ParticipantController::class, 'import'])->name('participants.import');
+    Route::resource('evenements.tarifs', TarifController::class)->shallow()->except(['index', 'show', 'create', 'edit']);
+    Route::post('presences/scan', [PresenceController::class, 'scan'])->name('presences.scan');
+    Route::get('evenements/{evenement}/presences', [PresenceController::class, 'index'])->name('evenements.presences');
+    Route::patch('evenements/{evenement}/statut', [EvenementController::class, 'updateStatut'])->name('evenements.updateStatut');
+    Route::resource('evenements.taches', TacheController::class)->shallow();
+    Route::patch('taches/{tache}/statut', [TacheController::class, 'updateStatut'])->name('taches.updateStatut');
+    Route::get('evenements/{evenement}/budget', [BudgetController::class, 'show'])->name('evenements.budget.show');
+    Route::post('budgets/{budget}/lignes', [BudgetController::class, 'storeLigne'])->name('budgets.lignes.store');
+    Route::patch('lignes-budget/{ligneBudget}', [BudgetController::class, 'updateLigne'])->name('lignes-budget.update');
+    Route::delete('lignes-budget/{ligneBudget}', [BudgetController::class, 'destroyLigne'])->name('lignes-budget.destroy');
+
+    Route::prefix('evenements/{evenement}/logistique')->name('logistique.')->group(function () {
+        Route::get('ressources', [RessourceController::class, 'index'])->name('ressources.index');
+        Route::post('ressources', [RessourceController::class, 'store'])->name('ressources.store');
+        Route::put('ressources/{ressource}', [RessourceController::class, 'update'])->name('ressources.update');
+        Route::delete('ressources/{ressource}', [RessourceController::class, 'destroy'])->name('ressources.destroy');
+        Route::post('ressources/check-availability', [RessourceController::class, 'checkAvailability'])->name('ressources.check');
+
+        Route::get('intervenants', [IntervenantController::class, 'index'])->name('intervenants.index');
+        Route::post('intervenants/assign', [IntervenantController::class, 'assignToSession'])->name('intervenants.assign');
+        Route::delete('intervenants/{intervenantSession}', [IntervenantController::class, 'removeFromSession'])->name('intervenants.remove');
+        Route::get('intervenants/perdiems', [IntervenantController::class, 'perdiems'])->name('intervenants.perdiems');
+
+        Route::get('benevoles', [BenevoleController::class, 'index'])->name('benevoles.index');
+        Route::post('benevoles', [BenevoleController::class, 'store'])->name('benevoles.store');
+        Route::put('benevoles/{benevoleAffectation}', [BenevoleController::class, 'update'])->name('benevoles.update');
+        Route::delete('benevoles/{benevoleAffectation}', [BenevoleController::class, 'destroy'])->name('benevoles.destroy');
+        Route::get('benevoles/planning', [BenevoleController::class, 'planning'])->name('benevoles.planning');
+
+        Route::get('dotations', [DotationController::class, 'index'])->name('dotations.index');
+        Route::post('dotations', [DotationController::class, 'store'])->name('dotations.store');
+        Route::patch('dotations/{dotation}/return', [DotationController::class, 'returnItem'])->name('dotations.return');
+        Route::get('dotations/tracking', [DotationController::class, 'tracking'])->name('dotations.tracking');
+    });
+
+    Route::prefix('evenements/{evenement}/communication')->name('communication.')->group(function () {
+        Route::get('campaigns', [CommunicationController::class, 'campaigns'])->name('campaigns.index');
+        Route::get('campaigns/create', [CommunicationController::class, 'createCampaign'])->name('campaigns.create');
+        Route::post('campaigns/send', [CommunicationController::class, 'sendCampaign'])->name('campaigns.send');
+
+        Route::get('enquetes', [EnqueteController::class, 'index'])->name('enquetes.index');
+        Route::get('enquetes/create', [EnqueteController::class, 'create'])->name('enquetes.create');
+        Route::post('enquetes', [EnqueteController::class, 'store'])->name('enquetes.store');
+        Route::get('enquetes/{enquete}', [EnqueteController::class, 'show'])->name('enquetes.show');
+        Route::post('enquetes/{enquete}/respond', [EnqueteController::class, 'respond'])->name('enquetes.respond');
+        Route::patch('enquetes/{enquete}/publish', [EnqueteController::class, 'publish'])->name('enquetes.publish');
+        Route::patch('enquetes/{enquete}/close', [EnqueteController::class, 'close'])->name('enquetes.close');
+
+        Route::get('documents', [DocumentController::class, 'index'])->name('documents.index');
+        Route::post('documents', [DocumentController::class, 'store'])->name('documents.store');
+        Route::get('documents/{document}/download', [DocumentController::class, 'download'])->name('documents.download');
+        Route::delete('documents/{document}', [DocumentController::class, 'destroy'])->name('documents.destroy');
+    });
+
+    Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
+    Route::post('notifications/send', [NotificationController::class, 'send'])->name('notifications.send');
+    Route::get('notifications/settings', [NotificationController::class, 'settings'])->name('notifications.settings');
+    Route::get('communication/templates', [CommunicationController::class, 'templates'])->name('communication.templates');
+
+    Route::prefix('admin')->name('admin.')->middleware(['role:admin|responsable_dcirp'])->group(function () {
+        Route::resource('users', UserController::class);
+        Route::patch('users/{user}/toggle-active', [UserController::class, 'toggleActive'])->name('users.toggle');
+        Route::resource('roles', RoleController::class)->except(['show']);
+        Route::get('audit', [AuditController::class, 'index'])->name('audit.index');
+        Route::get('audit/{activity}', [AuditController::class, 'show'])->name('audit.show');
+        Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
+        Route::post('settings', [SettingsController::class, 'update'])->name('settings.update');
+    });
+
+    Route::prefix('crm')->name('crm.')->group(function () {
+        Route::get('contacts', [CrmController::class, 'contacts'])->name('contacts.index');
+        Route::get('contacts/{user}', [CrmController::class, 'showContact'])->name('contacts.show');
+        Route::get('followups', [CrmController::class, 'followups'])->name('followups.index');
+        Route::post('followups', [CrmController::class, 'createFollowup'])->name('followups.store');
+        Route::patch('followups/{followup}', [CrmController::class, 'updateFollowup'])->name('followups.update');
+        Route::get('evenements/{evenement}/b2b', [CrmController::class, 'b2bMeetings'])->name('b2b.index');
+        Route::post('evenements/{evenement}/b2b', [CrmController::class, 'createMeeting'])->name('b2b.store');
+        Route::get('loyalty', [CrmController::class, 'loyalty'])->name('loyalty.index');
+        Route::post('loyalty/invite', [CrmController::class, 'sendPriorityInvitation'])->name('loyalty.invite');
+        Route::post('sync-moov', [CrmController::class, 'syncMoov'])->name('sync');
+        Route::post('thank-you/{evenement}', [CrmController::class, 'sendThankYou'])->name('thank-you');
+    });
+
+    Route::prefix('rapports')->name('rapports.')->group(function () {
+        Route::get('/', [RapportController::class, 'index'])->name('index');
+        Route::get('evenements/{evenement}/participation', [RapportController::class, 'participation'])->name('participation');
+        Route::get('evenements/{evenement}/financier', [RapportController::class, 'financier'])->name('financier');
+        Route::get('evenements/{evenement}/rse', [RapportController::class, 'rse'])->name('rse');
+        Route::get('evenements/{evenement}/export', [RapportController::class, 'export'])->name('export');
+        Route::get('evenements/{evenement}/satisfaction', [SatisfactionController::class, 'index'])->name('satisfaction');
+        Route::get('enquetes/{enquete}/analyse', [SatisfactionController::class, 'analyse'])->name('satisfaction.analyse');
+    });
+
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+});
+
+require __DIR__.'/auth.php';

@@ -1,0 +1,138 @@
+Tu es un developpeur frontend Vue.js + Tailwind CSS senior. Le projet MoovFlow est dans le dossier du projet.
+
+MISSION : Refonte COMPLETE du frontend pour matcher EXACTEMENT le design des captures d'ecran fournies par Carine.
+
+ANALYSE DU DESIGN CIBLE :
+
+=== COULEURS EXACTES ===
+- Sidebar : #0066B3 (bleu Moov) - fond uni, pas de gradient
+- Sidebar texte : blanc #FFFFFF
+- Sidebar item actif : fond blanc/20 + bordure gauche blanche
+- Fond principal : #F3F4F6 (gris tres clair)
+- Cards : blanc #FFFFFF, border-radius 8px, ombre douce shadow-md
+- Titres page : #111827 (gray-900), font-bold, text-2xl
+- Sous-titres : #6B7280 (gray-500)
+- Boutons primaires : #1E3A5F (bleu fonce), texte blanc, rounded-lg
+- Boutons secondaires : blanc, bordure grise
+- Badges : fond orange clair #FEF3C7, texte orange #D97706 (pour CONCOURS)
+- Texte tableau : #374151 (gray-700)
+- Bordures tableau : #E5E7EB (gray-200)
+
+=== STRUCTURE SIDEBAR (240px fixe) ===
+En haut :
+- Logo : "MOOV AFRICA" (texte blanc, font-bold, text-xl)
+- Sous-logo : "Portal dCIRP" (texte blanc/70, text-sm)
+
+Menu (avec icones SVG simples, PAS d'emojis) :
+- Tableau de Bord (icone dashboard/grid)
+- Gestion Evenements (icone calendrier)
+- Logistique et Stocks (icone cube/box)
+- Impact RSE et Rapports (icone chart/bar)
+- Annuaire Participants (icone users)
+
+En bas :
+- Avatar rond avec initiales (fond bleu clair)
+- Nom utilisateur (blanc)
+- Role (blanc/70, text-xs)
+- Bouton Deconnexion (fond blanc/10, icone fleche)
+- Version : "v2.4.0 - Burkina Faso" (texte blanc/50, text-xs)
+
+=== STRUCTURE HEADER ===
+- Titre page (bold, large)
+- Sous-titre (gris, normal)
+- Bouton action a droite ("Nouvel Evenement +", "Nouvelle Ressource +", etc.)
+
+=== STRUCTURE CONTENU ===
+Cards stats en haut (4 cards) :
+- Icone ronde coloree en haut a gauche
+- Label en gris uppercase, text-xs
+- Valeur en gras, text-2xl, couleur selon type
+- Sous-texte optionnel (evolution %)
+
+Tableau principal :
+- Header : fond gris tres clair, texte gris uppercase, text-xs
+- Lignes : fond blanc, hover gris clair
+- Bordures fines entre lignes
+- Badges colores pour types/statuts
+- Actions : icones editer (crayon) et supprimer (poubelle)
+
+=== PAGES A REFAIRE ===
+
+1. PAGE LOGIN (resources/js/Pages/Auth/Login.vue) :
+- Fond #F3F4F6
+- Card centree blanche, border-radius 12px, ombre
+- Logo "MOOV AFRICA" + "BURKINA FASO - DCIRP" en haut
+- Titre "AUTHENTIFICATION SYSTEME"
+- Champs : Identifiant Professionnel (email), Mot de Passe
+- Icones dans les inputs (email, cadenas)
+- Bouton "ACCEDER AU PORTAIL" (bleu fonce, pleine largeur)
+- Footer : "ENCRYPTED SSL" + "D-CIRP ONLY" avec points colores
+- "MANAGEMENT SYSTEM v2.4.0" en bas
+
+2. LAYOUT PRINCIPAL (resources/js/Layouts/AppLayout.vue) :
+- Sidebar fixe 240px comme decrit ci-dessus
+- Header avec titre et bouton action
+- Zone contenu avec padding
+
+3. DASHBOARD (resources/js/Pages/Dashboard.vue) :
+- Titre "Pilotage Strategique RSE"
+- Sous-titre "Vue d'ensemble des actions et de l'engagement communautaire"
+- 4 cards stats : Beneficiaires Directs, Genre (Feminin), Associations Soutenues, Budget Engage
+- Graphique ligne "Evolution de l'Impact Social"
+- Sidebar droite "Evenements recents" avec card evenement
+
+4. EVENEMENTS INDEX (resources/js/Pages/Evenements/Index.vue) :
+- Titre "Gestion Evenements"
+- Sous-titre "Planification et suivi operationnel des typologies Moov"
+- Bouton "Nouvel Evenement +"
+- Card tableau : "Evenements en cours et a venir"
+- Filtre recherche a droite
+- Colonnes : EVENEMENT, TYPE (badge), LIEU, DATE, ACTION
+
+5. LOGISTIQUE (resources/js/Pages/Logistique/Ressources/Index.vue) :
+- Titre "Suivi Logistique et Stocks"
+- Sous-titre "Pilotage de l'inventaire materiel et des dotations d'equipement"
+- Bouton "Nouvelle Ressource +"
+- Card gauche : "Inventaire Actif Moov" (tableau)
+- Card droite : "Etat Global des Stocks" (categories avec %)
+- Card alerte : "Maintenance Requise" (fond sombre, texte orange)
+
+6. RAPPORTS RSE (resources/js/Pages/Rapports/RSE.vue ou Index.vue) :
+- Titre "Impact et Rapports RSE"
+- Sous-titre "Evaluation de la performance sociale et environnementale"
+- Bouton "RAPPORT PDF" (outline)
+- 3 cards stats : Beneficiaires Directs, Score Eco-Moyen, Budget Injecte
+- Card tableau : "Indicateurs par Evenement"
+
+7. SCANNER BILLETS (resources/js/Pages/Presences/Index.vue ou nouveau) :
+- Titre "Terminal de Controle"
+- Sous-titre "Validation des acces evenements Moov (Simulation Scanner)"
+- Card : input "Saisissez le code (ex: MOOV-1-4-XYZ)" + bouton "VALIDER"
+- Card : "Recommandations Terrain" avec liste a puces
+
+8. TOUTES LES AUTRES PAGES :
+Appliquer le meme style : sidebar, header, cards blanches, tableaux propres, boutons arrondis.
+
+=== ICONES ===
+Utiliser des icones SVG inline simples (pas de librairie externe). Exemples :
+- Dashboard : 4 petits carres
+- Calendrier : carre avec petits points
+- Cube : boite 3D simple
+- Chart : 3 barres verticales
+- Users : 2 silhouettes
+- Deconnexion : fleche sortante
+
+=== CONTRAINTES ===
+PAS d'emojis, uniquement des icones SVG
+PAS de gradient sur la sidebar, couleur unie #0066B3
+Texte TOUJOURS en francais
+Ombres douces sur les cards (shadow-md)
+Bordures fines et propres
+Espacements genereux (respirant)
+
+=== VERIFICATION ===
+1. npm run build (doit passer)
+2. php artisan test (doit passer)
+3. Verifier visuellement que le design correspond aux captures
+
+IMPORTANT : Ecris les fichiers complets, pas des patches partiels. Le design doit etre IDENTIQUE aux captures fournies.
