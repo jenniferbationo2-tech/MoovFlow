@@ -18,6 +18,7 @@ class Evenement extends Model
         'titre',
         'description',
         'visuel',
+        'reglement_pdf',
         'type_evenement_id',
         'date_debut',
         'date_fin',
@@ -25,6 +26,13 @@ class Evenement extends Model
         'statut',
         'budget_prev',
         'created_by',
+        //  Champs Salon
+        'nom_salon_hote',
+        'organisateur_externe',
+        'lieu_stand',
+        'superficie_stand',
+        'objectifs_stand',
+        'objectif_prospects',
     ];
 
     protected $casts = [
@@ -43,7 +51,7 @@ class Evenement extends Model
             ->useLogName('evenement')
             ->logOnly(['titre', 'type_evenement_id', 'date_debut', 'date_fin', 'lieu_id', 'statut', 'budget_prev', 'created_by'])
             ->logOnlyDirty()
-            ->setDescriptionForEvent(fn (string $eventName): string => "Evenement {$eventName}");
+            ->setDescriptionForEvent(fn(string $eventName): string => "Evenement {$eventName}");
     }
 
     public function typeEvenement(): BelongsTo
@@ -145,4 +153,64 @@ class Evenement extends Model
     {
         return $this->hasMany(B2BMeeting::class);
     }
+    // ── NOUVELLES RELATIONS ──────────────────
+
+    public function dossiers(): HasMany
+    {
+        return $this->hasMany(\App\Models\DossierInscription::class)
+            ->whereHas('inscription', fn($q) => $q->where('evenement_id', $this->id));
+    }
+
+    public function prix(): HasMany
+    {
+        return $this->hasMany(\App\Models\Prix::class)->orderBy('rang');
+    }
+
+    public function competitionPhases(): HasMany
+    {
+        return $this->hasMany(\App\Models\CompetitionPhase::class)->orderBy('ordre');
+    }
+
+    public function benevoles(): HasMany
+    {
+        return $this->hasMany(\App\Models\Benevole::class);
+    }
+
+    public function intervenants(): HasMany
+    {
+        return $this->hasMany(\App\Models\Intervenant::class);
+    }
+
+
+
+    /**
+     * Vérifie si l'événement a des prix à attribuer.
+     */
+    public function aPrix(): bool
+    {
+        return in_array($this->typeEvenement?->code, [
+            'BARA_MOUSSO',  // Concours
+            'SPORT',        // Tournoi sportif
+            'HACK',         // Hackathon
+            'CHALLENGE',    // Challenge innovation
+        ]);
+    }
+
+    /**
+     * Vérifie si l'événement est compétitif.
+     */
+    public function estCompetitif(): bool
+    {
+        return $this->aPrix();
+    }
+
+    /**
+     * Vérifie si c'est un salon (Moov participe à un événement externe).
+     */
+    public function estSalon(): bool
+    {
+        return $this->typeEvenement?->code === 'SALON';
+    }
+
+
 }

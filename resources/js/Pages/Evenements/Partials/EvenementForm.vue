@@ -42,6 +42,8 @@ const props = defineProps({
 
 const activeTab = ref('informations');
 const previewUrl = ref(props.evenement?.visuel_url ?? null);
+const reglementActuel = ref(props.evenement?.reglement_pdf_url ?? null);
+const reglementNouveauNom = ref(null);
 const showPublishModal = ref(false);
 
 const tabs = [
@@ -55,6 +57,7 @@ const form = useForm({
     titre: props.evenement?.titre ?? '',
     description: props.evenement?.description ?? '',
     visuel: null,
+    reglement_pdf: null,
     type_evenement_id: props.evenement?.type_evenement_id ?? '',
     date_debut: props.evenement?.date_debut ?? '',
     date_fin: props.evenement?.date_fin ?? '',
@@ -80,6 +83,12 @@ const handleFileChange = (event) => {
     const [file] = event.target.files;
     form.visuel = file ?? null;
     previewUrl.value = file ? URL.createObjectURL(file) : props.evenement?.visuel_url ?? null;
+};
+
+const handleReglementChange = (event) => {
+    const [file] = event.target.files;
+    form.reglement_pdf = file ?? null;
+    reglementNouveauNom.value = file?.name ?? null;
 };
 
 const submit = (status) => {
@@ -147,6 +156,60 @@ const publish = () => {
                                     <input v-model="form.date_fin" type="datetime-local" class="w-full rounded-2xl border-slate-300 focus:border-[#0066B3] focus:ring-[#0066B3]" />
                                     <InputError class="mt-2" :message="form.errors.date_fin" />
                                 </div>
+                            </div>
+
+                            <!-- 🆕 RÈGLEMENT PDF -->
+                            <div class="rounded-2xl border-2 border-amber-200 bg-amber-50/50 p-5">
+                                <div class="mb-3 flex items-start gap-3">
+                                    <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-red-100">
+                                        <svg class="h-5 w-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-sm font-bold text-amber-900">Règlement de l'événement</h3>
+                                        <p class="mt-0.5 text-xs text-amber-800">
+                                            Document PDF contenant les règles, consignes et critères de participation.
+                                            Sera téléchargeable par les candidats avant inscription.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Si un règlement existe déjà -->
+                                <div v-if="reglementActuel && !reglementNouveauNom"
+                                     class="mb-3 flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                                    <svg class="h-5 w-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                                    </svg>
+                                    <a :href="reglementActuel" target="_blank"
+                                       class="flex-1 text-sm font-bold text-emerald-800 underline hover:text-emerald-900">
+                                        Voir le règlement actuel
+                                    </a>
+                                    <span class="text-xs text-emerald-700">Choisissez un nouveau fichier pour remplacer</span>
+                                </div>
+
+                                <!-- Si nouveau fichier sélectionné -->
+                                <div v-if="reglementNouveauNom"
+                                     class="mb-3 flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                                    <svg class="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                                    </svg>
+                                    <p class="flex-1 text-sm font-bold text-blue-800">
+                                        Nouveau fichier : {{ reglementNouveauNom }}
+                                    </p>
+                                </div>
+
+                                <!-- Input file -->
+                                <input type="file"
+                                       accept="application/pdf"
+                                       @change="handleReglementChange"
+                                       class="block w-full cursor-pointer rounded-lg border border-amber-300 bg-white px-4 py-2.5 text-sm outline-none file:mr-3 file:rounded file:border-0 file:bg-amber-100 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-amber-800 hover:file:bg-amber-200"/>
+
+                                <p class="mt-2 text-xs text-amber-700">
+                                    Format accepté : PDF · Taille maximale : 10 MB · Optionnel
+                                </p>
+
+                                <InputError class="mt-2" :message="form.errors.reglement_pdf" />
                             </div>
                         </div>
 

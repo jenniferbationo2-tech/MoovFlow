@@ -28,7 +28,7 @@ const submit = () => {
         <div class="mb-8">
             <h1 class="font-['Outfit'] text-3xl font-bold text-slate-900">Mot de passe oublie</h1>
             <p class="mt-2 text-sm text-slate-500">
-                Indiquez votre courriel et nous vous enverrons un lien pour definir un nouveau mot de passe.
+                Indiquez votre email et nous vous enverrons un lien pour definir un nouveau mot de passe.
             </p>
         </div>
 

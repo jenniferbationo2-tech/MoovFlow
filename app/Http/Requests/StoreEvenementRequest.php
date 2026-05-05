@@ -26,6 +26,7 @@ class StoreEvenementRequest extends FormRequest
             'titre' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'visuel' => ['nullable', 'image', 'max:5120'],
+            'reglement_pdf'          => ['nullable', 'file', 'mimes:pdf', 'max:10240'], 
             'type_evenement_id' => ['required', 'integer', 'exists:types_evenement,id'],
             'date_debut' => ['required', 'date'],
             'date_fin' => ['required', 'date', 'after:date_debut'],
@@ -43,6 +44,14 @@ class StoreEvenementRequest extends FormRequest
             'retombees_partenaires' => ['nullable', 'numeric', 'min:0'],
             'nb_emplois_crees' => ['nullable', 'integer', 'min:0'],
             'score_environnemental' => ['nullable', 'numeric', 'between:0,100'],
+
+
+            'nom_salon_hote'        => ['nullable', 'string', 'max:255'],
+            'organisateur_externe'  => ['nullable', 'string', 'max:255'],
+            'lieu_stand'            => ['nullable', 'string', 'max:255'],
+            'superficie_stand'      => ['nullable', 'integer', 'min:0'],
+            'objectifs_stand'       => ['nullable', 'string'],
+            'objectif_prospects'    => ['nullable', 'integer', 'min:0'],
         ];
     }
 }

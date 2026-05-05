@@ -1,278 +1,186 @@
 <script setup>
-import AppLayout from '@/Layouts/AppLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
-import { computed } from 'vue';
-import { Bar, Doughnut, Line } from 'vue-chartjs';
-import {
-    ArcElement,
-    BarElement,
-    CategoryScale,
-    Chart as ChartJS,
-    Filler,
-    Legend,
-    LineElement,
-    LinearScale,
-    PointElement,
-    Tooltip,
-} from 'chart.js';
-
-ChartJS.register(ArcElement, BarElement, CategoryScale, Filler, Legend, LineElement, LinearScale, PointElement, Tooltip);
+import { computed } from 'vue'
+import { usePage } from '@inertiajs/vue3'
+import DashboardLayout from '@/Layouts/DashboardLayout.vue'
 
 const props = defineProps({
-    cards: {
-        type: Object,
-        required: true,
-    },
-    stats: {
-        type: Object,
-        required: true,
-    },
-    latest_events: {
-        type: Array,
-        default: () => [],
-    },
-    recent_activity: {
-        type: Array,
-        default: () => [],
-    },
-});
+    stats:               Object,
+    derniers_evenements: Array,
+    derniers_users:      Array,
+})
 
-const cardItems = computed(() => [
-    {
-        label: 'Evenements actifs',
-        value: props.cards.evenements_actifs,
-        accent: 'border-[#0066B3]',
-    },
-    {
-        label: 'Total inscrits',
-        value: props.cards.total_inscrits,
-        accent: 'border-[#00A651]',
-    },
-    {
-        label: 'Taux presence',
-        value: `${props.cards.taux_presence}%`,
-        accent: 'border-[#F59E0B]',
-    },
-    {
-        label: 'Budget total',
-        value: formatCurrency(props.cards.budget_total.previsionnel),
-        accent: 'border-[#8B5CF6]',
-    },
-    {
-        label: 'Score RSE moyen',
-        value: `${props.cards.score_rse_moyen}%`,
-        accent: 'border-[#14B8A6]',
-    },
-    {
-        label: 'Enquetes en cours',
-        value: props.cards.enquetes_en_cours,
-        accent: 'border-[#EF4444]',
-    },
-]);
+const page  = usePage()
+const user  = computed(() => page.props.auth?.user)
+const roles = computed(() => user.value?.roles ?? [])
 
-const lineData = computed(() => ({
-    labels: props.stats.monthly_trends.map((item) => item.month),
-    datasets: [
-        {
-            label: 'Inscriptions',
-            data: props.stats.monthly_trends.map((item) => item.value),
-            borderColor: '#0066B3',
-            backgroundColor: 'rgba(0, 102, 179, 0.15)',
-            fill: true,
-            tension: 0.35,
-        },
-    ],
-}));
+const titrePage = computed(() => {
+    if (roles.value.includes('admin'))             return 'Pilotage Stratégique RSE'
+    if (roles.value.includes('responsable_dcirp')) return 'Supervision dCIRP'
+    if (roles.value.includes('organisateur'))      return 'Mes Événements'
+    if (roles.value.includes('participant'))       return 'Mon Espace'
+    return 'Tableau de Bord'
+})
 
-const pieData = computed(() => ({
-    labels: props.stats.events_by_type.map((item) => item.label),
-    datasets: [
-        {
-            data: props.stats.events_by_type.map((item) => item.value),
-            backgroundColor: ['#0066B3', '#00A651', '#F59E0B', '#8B5CF6', '#EF4444', '#14B8A6'],
-        },
-    ],
-}));
+const sousTitre = computed(() => {
+    if (roles.value.includes('admin'))             return 'Vue d\'ensemble des actions et de l\'engagement communautaire'
+    if (roles.value.includes('responsable_dcirp')) return 'Validation et suivi des événements RSE'
+    if (roles.value.includes('organisateur'))      return 'Planification et gestion de vos événements'
+    return 'Bienvenue sur votre tableau de bord'
+})
 
-const barData = computed(() => ({
-    labels: props.stats.events_by_status.map((item) => item.label),
-    datasets: [
-        {
-            label: 'Evenements',
-            data: props.stats.events_by_status.map((item) => item.value),
-            backgroundColor: ['#0066B3', '#00A651', '#F59E0B', '#8B5CF6', '#EF4444'],
-            borderRadius: 10,
-        },
-    ],
-}));
+const formaterDate = (d) => {
+    if (!d) return '—'
+    return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
+}
 
-const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-        legend: {
-            display: true,
-            position: 'bottom',
-        },
-    },
-};
-
-const formatCurrency = (value) => new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'XOF',
-    maximumFractionDigits: 0,
-}).format(Number(value ?? 0));
-
-const formatDate = (value) => value
-    ? new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium' }).format(new Date(value))
-    : 'Date non definie';
+const formatNombre = (n) => {
+    if (!n) return '0'
+    if (n >= 1000000) return (n / 1000000).toFixed(1).replace('.0', '') + 'M'
+    if (n >= 1000)    return (n / 1000).toFixed(1).replace('.0', '') + 'K'
+    return n.toString()
+}
 </script>
 
 <template>
-    <Head title="Tableau de bord" />
+    <DashboardLayout>
 
-    <AppLayout>
-        <template #header>
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <h2 class="text-2xl font-bold text-slate-900">Tableau de bord</h2>
-                    <p class="text-sm text-slate-500">Pilotage global des evenements, finances, RSE et satisfaction.</p>
-                </div>
-                <Link
-                    :href="route('rapports.index')"
-                    class="rounded-2xl bg-[#0066B3] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#005290]"
-                >
-                    Ouvrir les rapports
-                </Link>
+        <!-- ── EN-TÊTE PAGE ── -->
+        <div class="mb-8 flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <h1 class="font-display text-4xl font-extrabold text-text-main">
+                    {{ titrePage }}
+                </h1>
+                <p class="mt-1 text-sm text-text-sub">{{ sousTitre }}</p>
             </div>
-        </template>
+            <a v-if="roles.includes('organisateur') || roles.includes('admin') || roles.includes('responsable_dcirp')"
+               
+            href="/evenements/create"
+               class="rounded-lg bg-moov-noir px-5 py-3 text-sm font-bold text-white shadow-md transition hover:bg-moov-noir-soft">
+                Nouvel Événement +
+            </a>
+        </div>
 
-        <div class="space-y-6">
-            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                <div
-                    v-for="item in cardItems"
-                    :key="item.label"
-                    class="rounded-3xl border-l-4 bg-white p-6 shadow-sm ring-1 ring-slate-200"
-                    :class="item.accent"
-                >
-                    <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">{{ item.label }}</p>
-                    <p class="mt-3 text-3xl font-bold text-slate-900">{{ item.value }}</p>
-                </div>
-            </div>
+        <!-- ── KPIs (style modèle pro) ── -->
+        <div class="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
 
-            <div class="grid gap-6 xl:grid-cols-[1.4fr,0.9fr]">
-                <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                    <div class="flex items-center justify-between gap-4">
-                        <div>
-                            <h3 class="text-lg font-semibold text-slate-900">Evolution des inscriptions</h3>
-                            <p class="text-sm text-slate-500">Suivi mensuel sur les 12 derniers mois.</p>
-                        </div>
-                        <div class="rounded-2xl bg-slate-50 px-4 py-3 text-right">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Participants presents</p>
-                            <p class="mt-1 text-xl font-bold text-slate-900">{{ stats.participants_present }}</p>
-                        </div>
-                    </div>
-                    <div class="mt-6 h-80">
-                        <Line :data="lineData" :options="chartOptions" />
-                    </div>
-                </div>
-
-                <div class="space-y-6">
-                    <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                        <h3 class="text-lg font-semibold text-slate-900">Repartition par type</h3>
-                        <div class="mt-5 h-64">
-                            <Doughnut :data="pieData" :options="chartOptions" />
-                        </div>
-                    </div>
-
-                    <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                        <h3 class="text-lg font-semibold text-slate-900">Synthese budgetaire</h3>
-                        <dl class="mt-5 space-y-4">
-                            <div class="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                                <dt class="text-sm text-slate-500">Previsionnel</dt>
-                                <dd class="text-lg font-bold text-slate-900">{{ formatCurrency(stats.budget_total.previsionnel) }}</dd>
-                            </div>
-                            <div class="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                                <dt class="text-sm text-slate-500">Depense</dt>
-                                <dd class="text-lg font-bold text-slate-900">{{ formatCurrency(stats.budget_total.depense) }}</dd>
-                            </div>
-                            <div class="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                                <dt class="text-sm text-slate-500">Taux presence global</dt>
-                                <dd class="text-lg font-bold text-slate-900">{{ stats.taux_presence }}%</dd>
-                            </div>
-                        </dl>
-                    </div>
-                </div>
+            <!-- KPI 1 -->
+            <div class="rounded-xl bg-card p-6 shadow-card">
+                <p class="text-xs font-bold uppercase tracking-wider text-text-muted">
+                    Bénéficiaires Directs
+                </p>
+                <p class="mt-3 font-display text-4xl font-extrabold text-moov-blue">
+                    {{ formatNombre(stats?.beneficiaires_directs ?? 0) }}
+                </p>
+                <p class="mt-2 text-xs text-emerald-600">
+                    ↑ {{ stats?.croissance_beneficiaires ?? 0 }}% vs précédent
+                </p>
             </div>
 
-            <div class="grid gap-6 xl:grid-cols-[1.1fr,0.9fr]">
-                <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                    <h3 class="text-lg font-semibold text-slate-900">Evenements par statut</h3>
-                    <div class="mt-6 h-80">
-                        <Bar :data="barData" :options="chartOptions" />
-                    </div>
-                </div>
-
-                <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                    <h3 class="text-lg font-semibold text-slate-900">Activite recente</h3>
-                    <div class="mt-5 space-y-3">
-                        <div
-                            v-for="(activity, index) in recent_activity"
-                            :key="`${activity.type}-${index}`"
-                            class="rounded-2xl border border-slate-200 px-4 py-3"
-                        >
-                            <div class="flex items-center justify-between gap-3">
-                                <p class="font-semibold text-slate-900">{{ activity.label }}</p>
-                                <span class="text-xs text-slate-500">{{ formatDate(activity.date) }}</span>
-                            </div>
-                            <p class="mt-1 text-sm text-slate-600">{{ activity.description }}</p>
-                        </div>
-                        <p v-if="recent_activity.length === 0" class="text-sm text-slate-500">Aucune activite recente disponible.</p>
-                    </div>
-                </div>
+            <!-- KPI 2 -->
+            <div class="rounded-xl bg-card p-6 shadow-card">
+                <p class="text-xs font-bold uppercase tracking-wider text-text-muted">
+                    Femmes Bénéficiaires
+                </p>
+                <p class="mt-3 font-display text-4xl font-extrabold text-moov-blue">
+                    {{ stats?.taux_femmes ?? 0 }}<span class="text-2xl">%</span>
+                </p>
+                <p class="mt-2 text-xs text-text-sub">
+                    Cible : {{ stats?.cible_femmes ?? 60 }}%
+                </p>
             </div>
 
-            <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                <div class="flex items-center justify-between gap-4">
-                    <div>
-                        <h3 class="text-lg font-semibold text-slate-900">Derniers evenements</h3>
-                        <p class="text-sm text-slate-500">Les 5 derniers evenements suivis par le systeme.</p>
-                    </div>
-                    <Link :href="route('evenements.index')" class="text-sm font-semibold text-[#0066B3]">
-                        Voir tous les evenements
-                    </Link>
-                </div>
+            <!-- KPI 3 -->
+            <div class="rounded-xl bg-card p-6 shadow-card">
+                <p class="text-xs font-bold uppercase tracking-wider text-text-muted">
+                    Associations Soutenues
+                </p>
+                <p class="mt-3 font-display text-4xl font-extrabold text-moov-blue">
+                    {{ stats?.associations_soutenues ?? 0 }}
+                </p>
+                <p class="mt-2 text-xs text-text-sub">
+                    Projets validés
+                </p>
+            </div>
 
-                <div class="mt-6 overflow-x-auto">
-                    <table class="min-w-full divide-y divide-slate-200">
-                        <thead class="bg-slate-50">
-                            <tr>
-                                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Evenement</th>
-                                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Type</th>
-                                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Statut</th>
-                                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Date debut</th>
-                                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Inscrits</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            <tr v-for="event in latest_events" :key="event.id">
-                                <td class="px-4 py-3">
-                                    <Link :href="route('evenements.show', event.id)" class="font-semibold text-slate-900 hover:text-[#0066B3]">
-                                        {{ event.titre }}
-                                    </Link>
-                                </td>
-                                <td class="px-4 py-3 text-sm text-slate-700">{{ event.type }}</td>
-                                <td class="px-4 py-3 text-sm text-slate-700">{{ event.statut }}</td>
-                                <td class="px-4 py-3 text-sm text-slate-700">{{ formatDate(event.date_debut) }}</td>
-                                <td class="px-4 py-3 text-sm font-semibold text-slate-900">{{ event.inscriptions_count }}</td>
-                            </tr>
-                            <tr v-if="latest_events.length === 0">
-                                <td colspan="5" class="px-4 py-8 text-center text-sm text-slate-500">Aucun evenement recent disponible.</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+            <!-- KPI 4 -->
+            <div class="rounded-xl bg-card p-6 shadow-card">
+                <p class="text-xs font-bold uppercase tracking-wider text-text-muted">
+                    Budget Engagé
+                </p>
+                <p class="mt-3 font-display text-4xl font-extrabold text-moov-blue">
+                    {{ formatNombre(stats?.budget_engage ?? 0) }}
+                    <span class="text-xl">F</span>
+                </p>
+                <p class="mt-2 text-xs text-moov-orange">
+                    {{ stats?.taux_budget ?? 0 }}% de l'enveloppe
+                </p>
             </div>
         </div>
-    </AppLayout>
+
+        <!-- ── 2 COLONNES : Évolution + Événements récents ── -->
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+
+            <!-- Évolution (placeholder graphique) -->
+            <div class="lg:col-span-2 rounded-xl bg-card p-6 shadow-card">
+                <h3 class="font-display text-base font-bold text-text-main">
+                    Évolution de l'Impact Social
+                </h3>
+                <p class="mt-1 text-xs text-text-sub">12 derniers mois</p>
+
+                <!-- Graphique simulé avec barres -->
+                <div class="mt-6 flex items-end justify-between gap-2 h-48">
+                    <div v-for="(mois, i) in ['Jan','Feb','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']"
+                         :key="mois"
+                         class="flex flex-1 flex-col items-center gap-2">
+                        <div class="w-full rounded-t bg-moov-blue transition hover:bg-moov-blue-light"
+                             :style="`height: ${30 + (i * 5) + Math.sin(i) * 20}%`"/>
+                        <span class="text-[10px] text-text-sub">{{ mois }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Événements récents -->
+            <div class="rounded-xl bg-card p-6 shadow-card">
+                <div class="mb-4 flex items-center justify-between">
+                    <h3 class="font-display text-base font-bold text-text-main">
+                        Événements récents
+                    </h3>
+                    <a href="/evenements"
+                       class="text-xs font-bold text-moov-orange hover:underline">
+                        Voir tout →
+                    </a>
+                </div>
+
+                <div v-if="derniers_evenements?.length" class="space-y-3">
+                    <a v-for="ev in derniers_evenements" :key="ev.id"
+                       :href="`/evenements/${ev.id}`"
+                       class="flex items-start justify-between gap-3 rounded-lg border border-border-soft p-3 transition hover:border-moov-blue/30 hover:shadow-sm">
+                        <div class="min-w-0">
+                            <p class="truncate text-sm font-bold text-text-main">{{ ev.titre }}</p>
+                            <p class="mt-0.5 text-xs text-text-sub">
+                                {{ ev.lieu?.nom ?? '—' }} · {{ formaterDate(ev.date_debut) }}
+                            </p>
+                        </div>
+                        <span :class="[
+                            'flex-shrink-0 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
+                            ev.type_evenement?.code === 'BARA_MOUSSO' ? 'bg-moov-orange-50 text-moov-orange-dark' :
+                            ev.type_evenement?.code === 'CONF'        ? 'bg-pink-50 text-pink-700' :
+                            ev.type_evenement?.code === 'SPORT'       ? 'bg-blue-50 text-blue-700' :
+                            ev.type_evenement?.code === 'FORMATION'   ? 'bg-emerald-50 text-emerald-700' :
+                            ev.type_evenement?.code === 'HACK'        ? 'bg-amber-50 text-amber-700' :
+                            ev.type_evenement?.code === 'SALON'       ? 'bg-indigo-50 text-indigo-700' :
+                            'bg-slate-100 text-slate-700'
+                        ]">
+                            {{ ev.type_evenement?.nom ?? 'Type' }}
+                        </span>
+                    </a>
+                </div>
+
+                <p v-else class="rounded-lg border border-dashed border-border-soft py-8 text-center text-sm text-text-sub">
+                    Aucun événement à afficher
+                </p>
+            </div>
+        </div>
+
+    </DashboardLayout>
 </template>

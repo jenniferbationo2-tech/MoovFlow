@@ -15,16 +15,15 @@ class Inscription extends Model
     use HasFactory, LogsActivity;
 
     protected $fillable = [
-        'user_id',
-        'evenement_id',
-        'tarif_id',
-        'statut',
-        'qr_code',
+        'user_id', 'evenement_id', 'tarif_id',
+        'statut', 'qr_code',
+        'motif_refus', 'date_analyse', 'analyse_par',
     ];
 
-    /**
-     * Configure la journalisation d activite.
-     */
+    protected $casts = [
+        'date_analyse' => 'datetime',
+    ];
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
@@ -33,6 +32,8 @@ class Inscription extends Model
             ->logOnlyDirty()
             ->setDescriptionForEvent(fn (string $eventName): string => "Inscription {$eventName}");
     }
+
+    // ── RELATIONS ──────────────────────────────
 
     public function user(): BelongsTo
     {
@@ -62,5 +63,42 @@ class Inscription extends Model
     public function presence(): HasOne
     {
         return $this->hasOne(Presence::class);
+    }
+
+    public function dossier(): HasOne
+    {
+        return $this->hasOne(DossierInscription::class);
+    }
+
+    public function analysePar(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'analyse_par');
+    }
+
+    // ── HELPERS DE STATUT ──────────────────────
+
+    public function estEnAttente(): bool
+    {
+        return in_array($this->statut, ['en_attente', 'en_analyse']);
+    }
+
+    public function estAcceptee(): bool
+    {
+        return in_array($this->statut, ['acceptee', 'confirmee', 'present']);
+    }
+
+    public function estRefusee(): bool
+    {
+        return $this->statut === 'refusee';
+    }
+
+    public function estConfirmee(): bool
+    {
+        return $this->statut === 'confirmee';
+    }
+
+    public function estPresent(): bool
+    {
+        return $this->statut === 'present';
     }
 }

@@ -14,7 +14,7 @@ use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'nom', 'prenom', 'email', 'password', 'telephone', 'is_active'])]
+#[Fillable(['name', 'nom', 'prenom', 'email', 'password', 'telephone', 'is_active','tentatives_connexions','bloque_jusqu_a'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -32,6 +32,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'bloque_jusqu_a'=>'datetime',
         ];
     }
 
@@ -44,7 +45,7 @@ class User extends Authenticatable
             ->useLogName('user')
             ->logOnly(['name', 'nom', 'prenom', 'email', 'telephone', 'is_active'])
             ->logOnlyDirty()
-            ->setDescriptionForEvent(fn (string $eventName): string => "Utilisateur {$eventName}");
+            ->setDescriptionForEvent(fn(string $eventName): string => "Utilisateur {$eventName}");
     }
 
     public function inscriptions(): HasMany
@@ -115,5 +116,53 @@ class User extends Authenticatable
     public function presencesScannees(): HasMany
     {
         return $this->hasMany(Presence::class, 'scane_par');
+    }
+
+    /**
+     * Vérifie si le compte est actuellement bloqué.
+     * Déblocage automatique si le délai est dépassé.
+     */
+    public function estBloque(): bool
+    {
+        if (!$this->bloque_jusqu_a) {
+            return false;
+        }
+
+        if (now()->isAfter($this->bloque_jusqu_a)) {
+            // Déblocage automatique
+            $this->update([
+                'tentatives_connexion' => 0,
+                'bloque_jusqu_a'       => null,
+            ]);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Incrémente les tentatives. Bloque le compte au bout de 3.
+     */
+    public function incrementerTentatives(): void
+    {
+        // ⚠️ NE PAS utiliser increment() — ne déclenche pas les events
+        $this->tentatives_connexion += 1;
+
+        if ($this->tentatives_connexion >= 3) {
+            $this->bloque_jusqu_a = now()->addMinutes(15);
+        }
+
+        $this->save();
+    }
+
+    /**
+     * Réinitialise les tentatives (à appeler après connexion réussie).
+     */
+    public function reinitialiserTentatives(): void
+    {
+        $this->update([
+            'tentatives_connexion' => 0,
+            'bloque_jusqu_a'       => null,
+        ]);
     }
 }

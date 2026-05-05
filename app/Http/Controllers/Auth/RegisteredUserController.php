@@ -30,28 +30,33 @@ class RegisteredUserController extends Controller
      *
      * @throws ValidationException
      */
-    public function store(Request $request): RedirectResponse
-    {
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|lowercase|email|max:255|unique:'.User::class,
-            'password' => ['required', 'confirmed', Rules\Password::defaults()],
-        ]);
+   public function store(Request $request): RedirectResponse
+{
+    $request->validate([
+        'nom'       => ['required', 'string', 'max:255'],
+        'prenom'    => ['required', 'string', 'max:255'],
+        'email'     => ['required', 'string', 'email', 'max:255', 'unique:'.User::class],
+        'telephone' => ['nullable', 'string', 'max:50'],
+        'password'  => ['required', 'confirmed', Rules\Password::defaults()],
+    ]);
 
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'is_active' => true,
-        ]);
+    $user = User::create([
+        'name'      => $request->prenom.' '.$request->nom,
+        'nom'       => $request->nom,
+        'prenom'    => $request->prenom,
+        'email'     => $request->email,
+        'telephone' => $request->telephone,
+        'password'  => Hash::make($request->password),
+        'is_active' => true,
+    ]);
 
-        Role::findOrCreate('participant', 'web');
-        $user->assignRole('participant');
+    // Attribution automatique du rôle participant
+    $user->assignRole('participant');
 
-        event(new Registered($user));
+    event(new Registered($user));
 
-        Auth::login($user);
+    Auth::login($user);
 
-        return redirect(route('dashboard', absolute: false));
-    }
+    return redirect()->intended(route('dashboard', absolute: false));
+}
 }

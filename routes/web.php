@@ -3,7 +3,8 @@
 use App\Http\Controllers\Admin\AuditController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SettingsController;
-use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\UserController as AdminUserController;
+use App\Http\Controllers\AnnuaireController;
 use App\Http\Controllers\BenevoleController;
 use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CommunicationController;
@@ -25,46 +26,73 @@ use App\Http\Controllers\RessourceController;
 use App\Http\Controllers\SatisfactionController;
 use App\Http\Controllers\TarifController;
 use App\Http\Controllers\TacheController;
-use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
-Route::get('/', function () {
-    if (auth()->check()) {
-        return redirect()->route('evenements.index');
-    }
 
-    return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
-    ]);
-});
 
-Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth', 'verified'])->name('dashboard');
+Route::get('/', fn () => redirect()->route('evenements.index'))->name('home');
+
+Route::get('/evenements', [EvenementController::class, 'index'])->name('evenements.index');
+Route::get('/evenements/{evenement}', [EvenementController::class, 'show'])->name('evenements.show');
+
+Route::post('paiements/callback', [PaiementController::class, 'callback'])->name('paiements.callback');
+
 
 Route::middleware('auth')->group(function () {
-    Route::resource('evenements', EvenementController::class);
+
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    
+    Route::resource('evenements', EvenementController::class)->except(['index', 'show']);
     Route::get('evenements/{evenement}/inscrire', [InscriptionController::class, 'create'])->name('evenements.inscrire');
-    Route::get('evenements/{evenement}/export-participants', [InscriptionController::class, 'export'])->name('evenements.export-participants');
-    Route::resource('inscriptions', InscriptionController::class)->except(['edit', 'update']);
+    Route::get('evenements/{evenement}/export-paricipants', [InscriptionController::class, 'export'])->name('evenements.export-participants');
+    Route::patch('evenements/{evenement}/statut', [EvenementController::class, 'updateStatut'])->name('evenements.updateStatut');
+
+    // ── Inscriptions ──
+    Route::get('/inscriptions', [InscriptionController::class, 'index'])->name('inscriptions.index');
+    Route::post('/inscriptions', [InscriptionController::class, 'store'])->name('inscriptions.store');
+    Route::get('/inscriptions/{inscription}', [InscriptionController::class, 'show'])->name('inscriptions.show');
+    Route::delete('/inscriptions/{inscription}', [InscriptionController::class, 'destroy'])->name('inscriptions.destroy');
+
+    // Workflow préinscription
+    Route::post('inscriptions/{inscription}/analyser', [InscriptionController::class, 'analyser'])->name('inscriptions.analyser');
+    Route::post('inscriptions/{inscription}/accepter', [InscriptionController::class, 'accepter'])->name('inscriptions.accepter');
+    Route::post('inscriptions/{inscription}/refuser', [InscriptionController::class, 'refuser'])->name('inscriptions.refuser');
+    Route::post('inscriptions/{inscription}/annuler', [InscriptionController::class, 'annuler'])->name('inscriptions.annuler');
+
+    // Mes inscriptions (participant)
+    Route::get('/mes-inscriptions', [InscriptionController::class, 'mesInscriptions'])->name('mes-inscriptions.index');
+
+    // ── Annuaire participants 
+    Route::get('/annuaire', [AnnuaireController::class, 'index'])->name('annuaire.index');
+    Route::get('/annuaire/{user}', [AnnuaireController::class, 'show'])->name('annuaire.show');
+
+    // ── Paiements ──
     Route::post('inscriptions/{inscription}/paiement', [PaiementController::class, 'initier'])->name('paiements.initier');
-    Route::post('paiements/callback', [PaiementController::class, 'callback'])->name('paiements.callback')->withoutMiddleware('auth');
     Route::get('paiements/{paiement}', [PaiementController::class, 'show'])->name('paiements.show');
+
+    // ── Participants ──
     Route::resource('participants', ParticipantController::class)->only(['index', 'show']);
     Route::post('participants/import', [ParticipantController::class, 'import'])->name('participants.import');
+
+    // ── Tarifs ──
     Route::resource('evenements.tarifs', TarifController::class)->shallow()->except(['index', 'show', 'create', 'edit']);
+
+    // ── Présences ──
     Route::post('presences/scan', [PresenceController::class, 'scan'])->name('presences.scan');
     Route::get('evenements/{evenement}/presences', [PresenceController::class, 'index'])->name('evenements.presences');
-    Route::patch('evenements/{evenement}/statut', [EvenementController::class, 'updateStatut'])->name('evenements.updateStatut');
+
+    // ── Tâches ──
     Route::resource('evenements.taches', TacheController::class)->shallow();
     Route::patch('taches/{tache}/statut', [TacheController::class, 'updateStatut'])->name('taches.updateStatut');
+
+    // ── Budget ──
     Route::get('evenements/{evenement}/budget', [BudgetController::class, 'show'])->name('evenements.budget.show');
     Route::post('budgets/{budget}/lignes', [BudgetController::class, 'storeLigne'])->name('budgets.lignes.store');
     Route::patch('lignes-budget/{ligneBudget}', [BudgetController::class, 'updateLigne'])->name('lignes-budget.update');
     Route::delete('lignes-budget/{ligneBudget}', [BudgetController::class, 'destroyLigne'])->name('lignes-budget.destroy');
 
+    // ── Logistique ──
     Route::prefix('evenements/{evenement}/logistique')->name('logistique.')->group(function () {
         Route::get('ressources', [RessourceController::class, 'index'])->name('ressources.index');
         Route::post('ressources', [RessourceController::class, 'store'])->name('ressources.store');
@@ -89,6 +117,7 @@ Route::middleware('auth')->group(function () {
         Route::get('dotations/tracking', [DotationController::class, 'tracking'])->name('dotations.tracking');
     });
 
+    // ── Communication ──
     Route::prefix('evenements/{evenement}/communication')->name('communication.')->group(function () {
         Route::get('campaigns', [CommunicationController::class, 'campaigns'])->name('campaigns.index');
         Route::get('campaigns/create', [CommunicationController::class, 'createCampaign'])->name('campaigns.create');
@@ -108,21 +137,29 @@ Route::middleware('auth')->group(function () {
         Route::delete('documents/{document}', [DocumentController::class, 'destroy'])->name('documents.destroy');
     });
 
+    // ── Notifications ──
     Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::post('notifications/send', [NotificationController::class, 'send'])->name('notifications.send');
     Route::get('notifications/settings', [NotificationController::class, 'settings'])->name('notifications.settings');
     Route::get('communication/templates', [CommunicationController::class, 'templates'])->name('communication.templates');
 
-    Route::prefix('admin')->name('admin.')->middleware(['role:admin|responsable_dcirp'])->group(function () {
-        Route::resource('users', UserController::class);
-        Route::patch('users/{user}/toggle-active', [UserController::class, 'toggleActive'])->name('users.toggle');
+    // ── Admin ──
+    Route::prefix('admin')->name('admin.')->group(function () {
+        Route::resource('users', AdminUserController::class);
+        Route::patch('users/{user}/toggle-active', [AdminUserController::class, 'toggleActive'])->name('users.toggle');
+        Route::post('users/{user}/debloquer', [AdminUserController::class, 'debloquer'])->name('users.debloquer');
+        Route::post('users/{user}/reset-password', [AdminUserController::class, 'resetPassword'])->name('users.reset-password');
+
         Route::resource('roles', RoleController::class)->except(['show']);
+
         Route::get('audit', [AuditController::class, 'index'])->name('audit.index');
         Route::get('audit/{activity}', [AuditController::class, 'show'])->name('audit.show');
+
         Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
         Route::post('settings', [SettingsController::class, 'update'])->name('settings.update');
     });
 
+    // ── CRM ──
     Route::prefix('crm')->name('crm.')->group(function () {
         Route::get('contacts', [CrmController::class, 'contacts'])->name('contacts.index');
         Route::get('contacts/{user}', [CrmController::class, 'showContact'])->name('contacts.show');
@@ -137,6 +174,7 @@ Route::middleware('auth')->group(function () {
         Route::post('thank-you/{evenement}', [CrmController::class, 'sendThankYou'])->name('thank-you');
     });
 
+    // ── Rapports ──
     Route::prefix('rapports')->name('rapports.')->group(function () {
         Route::get('/', [RapportController::class, 'index'])->name('index');
         Route::get('evenements/{evenement}/participation', [RapportController::class, 'participation'])->name('participation');
@@ -147,9 +185,95 @@ Route::middleware('auth')->group(function () {
         Route::get('enquetes/{enquete}/analyse', [SatisfactionController::class, 'analyse'])->name('satisfaction.analyse');
     });
 
+    // ── Profil ──
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+ 
+
+Route::middleware('auth')->group(function () {
+    // Annuaire participants 
+    Route::get('/annuaire', [\App\Http\Controllers\AnnuaireController::class, 'index'])
+         ->name('annuaire.index');
+    Route::get('/annuaire/{user}', [\App\Http\Controllers\AnnuaireController::class, 'show'])
+         ->name('annuaire.show');
+
+/// ════════════════════════════════════════
+//   MODULE COMPÉTITIONS
+// ════════════════════════════════════════
+Route::prefix('evenements/{evenement}/competition')->name('competition.')->group(function () {
+    Route::get('/', [\App\Http\Controllers\CompetitionController::class, 'index'])
+         ->name('index');
+
+    // Équipes
+    Route::post('/equipes', [\App\Http\Controllers\CompetitionController::class, 'storeEquipe'])
+         ->name('equipes.store');
+    Route::delete('/equipes/{equipe}', [\App\Http\Controllers\CompetitionController::class, 'destroyEquipe'])
+         ->name('equipes.destroy');
+
+    // Phases
+    Route::post('/phases', [\App\Http\Controllers\CompetitionController::class, 'storePhase'])
+         ->name('phases.store');
+    Route::delete('/phases/{phase}', [\App\Http\Controllers\CompetitionController::class, 'destroyPhase'])
+         ->name('phases.destroy');
+
+    // Rencontres
+    Route::post('/phases/{phase}/rencontres', [\App\Http\Controllers\CompetitionController::class, 'storeRencontre'])
+         ->name('rencontres.store');
+    Route::patch('/rencontres/{rencontre}/score', [\App\Http\Controllers\CompetitionController::class, 'updateScore'])
+         ->name('rencontres.score');
+    Route::delete('/rencontres/{rencontre}', [\App\Http\Controllers\CompetitionController::class, 'destroyRencontre'])
+         ->name('rencontres.destroy');
 });
 
-require __DIR__.'/auth.php';
+// ════════════════════════════════════════
+//   MODULE LOGISTIQUE V2
+// ════════════════════════════════════════
+Route::prefix('evenements/{evenement}/logistique-v2')->name('logistique-v2.')->group(function () {
+    Route::get('/', [\App\Http\Controllers\LogistiqueController::class, 'index'])
+         ->name('index');
+
+    // Ressources
+    Route::post('/ressources', [\App\Http\Controllers\LogistiqueController::class, 'storeRessource'])
+         ->name('ressources.store');
+    Route::delete('/ressources/{ressourceId}', [\App\Http\Controllers\LogistiqueController::class, 'destroyRessource'])
+         ->name('ressources.destroy');
+
+    // Dotations
+    Route::post('/dotations', [\App\Http\Controllers\LogistiqueController::class, 'storeDotation'])
+         ->name('dotations.store');
+    Route::patch('/dotations/{dotationId}/return', [\App\Http\Controllers\LogistiqueController::class, 'returnDotation'])
+         ->name('dotations.return');
+    Route::delete('/dotations/{dotationId}', [\App\Http\Controllers\LogistiqueController::class, 'destroyDotation'])
+         ->name('dotations.destroy');
+
+    // Bénévoles
+    Route::post('/benevoles', [\App\Http\Controllers\LogistiqueController::class, 'storeBenevole'])
+         ->name('benevoles.store');
+    Route::delete('/benevoles/{benevole}', [\App\Http\Controllers\LogistiqueController::class, 'destroyBenevole'])
+         ->name('benevoles.destroy');
+});
+
+  
+   
+});
+    // Rencontres
+    Route::post('/phases/{phase}/rencontres', [\App\Http\Controllers\CompetitionController::class, 'storeRencontre'])
+         ->name('rencontres.store');
+    Route::patch('/rencontres/{rencontre}/score', [\App\Http\Controllers\CompetitionController::class, 'updateScore'])
+         ->name('rencontres.score');
+    Route::delete('/rencontres/{rencontre}', [\App\Http\Controllers\CompetitionController::class, 'destroyRencontre'])
+         ->name('rencontres.destroy');
+});
+
+    // Mes inscriptions (participant)
+    Route::get('/mes-inscriptions', [\App\Http\Controllers\InscriptionController::class, 'mesInscriptions'])
+         ->name('mes-inscriptions.index');
+    Route::post('/inscriptions/{inscription}/annuler', [\App\Http\Controllers\InscriptionController::class, 'annuler'])
+         ->name('inscriptions.annuler');
+});
+
+
+
+require __DIR__ . '/auth.php';

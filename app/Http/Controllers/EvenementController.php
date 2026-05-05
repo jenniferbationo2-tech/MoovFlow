@@ -39,13 +39,26 @@ class EvenementController extends Controller
             ->with(['typeEvenement', 'lieu.salles'])
             ->withCount('inscriptions');
 
+        // 🆕 Visibilité selon le rôle
+        $user = $request->user();
+        if (!$user || (!$user->hasAnyRole(['admin', 'responsable_dcirp']) && !$user->hasRole('organisateur'))) {
+            // Visiteurs et autres → uniquement publié, en cours ou terminé
+            $query->whereIn('statut', ['publie', 'en_cours', 'termine']);
+        } elseif ($user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp'])) {
+            // Organisateur → ses brouillons + tous les publiés
+            $query->where(function ($q) use ($user) {
+                $q->whereIn('statut', ['publie', 'en_cours', 'termine'])
+                    ->orWhere('created_by', $user->id);
+            });
+        }
         if ($filters['search'] !== '') {
             $query->where(function ($builder) use ($filters): void {
                 $builder
-                    ->where('titre', 'like', '%'.$filters['search'].'%')
-                    ->orWhere('description', 'like', '%'.$filters['search'].'%');
+                    ->where('titre', 'like', '%' . $filters['search'] . '%')
+                    ->orWhere('description', 'like', '%' . $filters['search'] . '%');
             });
         }
+
 
         if ($filters['type'] !== '') {
             $query->where('type_evenement_id', $filters['type']);
@@ -67,7 +80,7 @@ class EvenementController extends Controller
             ->orderBy('date_debut')
             ->paginate(10)
             ->withQueryString()
-            ->through(fn (Evenement $evenement): array => $this->mapEvenementListItem($evenement));
+            ->through(fn(Evenement $evenement): array => $this->mapEvenementListItem($evenement));
 
         return Inertia::render('Evenements/Index', [
             'evenements' => $evenements,
@@ -115,21 +128,28 @@ class EvenementController extends Controller
             $montantPrevisionnel = (float) ($validated['montant_previsionnel'] ?? 0);
 
             $evenement = Evenement::create([
-                'titre' => $validated['titre'],
-                'description' => $validated['description'] ?? null,
-                'visuel' => $visuelPath,
+                'titre'             => $validated['titre'],
+                'description'       => $validated['description'] ?? null,
+                'visuel'            => $visuelPath,
                 'type_evenement_id' => $validated['type_evenement_id'],
-                'date_debut' => $validated['date_debut'],
-                'date_fin' => $validated['date_fin'],
-                'lieu_id' => $validated['lieu_id'] ?? null,
-                'statut' => $validated['statut'] ?? 'brouillon',
-                'budget_prev' => $montantPrevisionnel,
-                'created_by' => $request->user()?->id,
+                'date_debut'        => $validated['date_debut'],
+                'date_fin'          => $validated['date_fin'],
+                'lieu_id'           => $validated['lieu_id'] ?? null,
+                'statut'            => $validated['statut'] ?? 'brouillon',
+                'budget_prev'       => $montantPrevisionnel,
+                'created_by'        => $request->user()?->id,
+                // 🆕 Champs Salon (toujours nullables avec ?? null)
+                'nom_salon_hote'       => $validated['nom_salon_hote']       ?? null,
+                'organisateur_externe' => $validated['organisateur_externe'] ?? null,
+                'lieu_stand'           => $validated['lieu_stand']           ?? null,
+                'superficie_stand'     => $validated['superficie_stand']     ?? null,
+                'objectifs_stand'      => $validated['objectifs_stand']      ?? null,
+                'objectif_prospects'   => $validated['objectif_prospects']   ?? null,
             ]);
 
             $evenement->budgets()->create([
                 'montant_previsionnel' => $montantPrevisionnel,
-                'devise' => $validated['devise'] ?? 'XOF',
+                'devise'               => $validated['devise'] ?? 'XOF',
             ]);
 
             $this->upsertObjectifRse($evenement, $validated);
@@ -147,6 +167,18 @@ class EvenementController extends Controller
     public function show(Request $request, Evenement $evenement): Response
     {
         $this->authorize('view', $evenement);
+        // Brouillon → seulement admin/responsable/créateur
+        if ($evenement->statut === 'brouillon') {
+            $user = $request->user();
+            abort_unless(
+                $user && (
+                    $user->hasAnyRole(['admin', 'responsable_dcirp']) ||
+                    (int) $evenement->created_by === (int) $user->id
+                ),
+                403,
+                'Cet événement n\'est pas encore disponible.'
+            );
+        }
 
         $evenement->load([
             'typeEvenement',
@@ -156,6 +188,10 @@ class EvenementController extends Controller
             'taches.responsable',
             'budgets.lignesBudget',
             'objectifsRse',
+            'tarifs',
+            'prix',
+            'intervenants',
+            'benevoles',
         ])->loadCount('inscriptions');
 
         return Inertia::render('Evenements/Show', [
@@ -196,40 +232,43 @@ class EvenementController extends Controller
 
         $validated = $request->validated();
 
+
         DB::transaction(function () use ($request, $validated, $evenement): void {
             $data = [
-                'titre' => $validated['titre'],
-                'description' => $validated['description'] ?? null,
+                'titre'             => $validated['titre'],
+                'description'       => $validated['description'] ?? null,
                 'type_evenement_id' => $validated['type_evenement_id'],
-                'date_debut' => $validated['date_debut'],
-                'date_fin' => $validated['date_fin'],
-                'lieu_id' => $validated['lieu_id'] ?? null,
-                'statut' => $validated['statut'] ?? $evenement->statut,
-                'budget_prev' => (float) ($validated['montant_previsionnel'] ?? $evenement->budget_prev ?? 0),
+                'date_debut'        => $validated['date_debut'],
+                'date_fin'          => $validated['date_fin'],
+                'lieu_id'           => $validated['lieu_id'] ?? null,
+                'statut'            => $validated['statut'] ?? $evenement->statut,
+                'budget_prev'       => (float) ($validated['montant_previsionnel'] ?? $evenement->budget_prev ?? 0),
+                // 🆕 Champs Salon
+                'nom_salon_hote'       => $validated['nom_salon_hote']       ?? $evenement->nom_salon_hote,
+                'organisateur_externe' => $validated['organisateur_externe'] ?? $evenement->organisateur_externe,
+                'lieu_stand'           => $validated['lieu_stand']           ?? $evenement->lieu_stand,
+                'superficie_stand'     => $validated['superficie_stand']     ?? $evenement->superficie_stand,
+                'objectifs_stand'      => $validated['objectifs_stand']      ?? $evenement->objectifs_stand,
+                'objectif_prospects'   => $validated['objectif_prospects']   ?? $evenement->objectif_prospects,
             ];
 
+            // Si nouveau visuel uploadé
             if ($request->hasFile('visuel')) {
-                if ($evenement->visuel) {
-                    Storage::disk('public')->delete($evenement->visuel);
-                }
-
                 $data['visuel'] = $request->file('visuel')->store('evenements/visuels', 'public');
             }
 
             $evenement->update($data);
 
-            $budget = $evenement->budgets()->firstOrCreate([], [
-                'montant_previsionnel' => 0,
-                'devise' => 'XOF',
-            ]);
-
-            $budget->update([
-                'montant_previsionnel' => (float) ($validated['montant_previsionnel'] ?? $budget->montant_previsionnel),
-                'devise' => $validated['devise'] ?? $budget->devise,
-            ]);
+            // Mise à jour du budget si fourni
+            $budget = $evenement->budgets()->first();
+            if ($budget) {
+                $budget->update([
+                    'montant_previsionnel' => (float) ($validated['montant_previsionnel'] ?? $budget->montant_previsionnel),
+                    'devise'               => $validated['devise'] ?? $budget->devise,
+                ]);
+            }
 
             $this->upsertObjectifRse($evenement, $validated);
-            $this->generateQrCode($evenement);
         });
 
         return redirect()
@@ -319,7 +358,7 @@ class EvenementController extends Controller
         return TypeEvenement::query()
             ->orderBy('nom')
             ->get()
-            ->map(fn (TypeEvenement $type): array => [
+            ->map(fn(TypeEvenement $type): array => [
                 'id' => $type->id,
                 'nom' => $type->nom,
                 'code' => $type->code,
@@ -337,7 +376,7 @@ class EvenementController extends Controller
         return Lieu::query()
             ->orderBy('nom')
             ->get()
-            ->map(fn (Lieu $lieu): array => [
+            ->map(fn(Lieu $lieu): array => [
                 'id' => $lieu->id,
                 'nom' => $lieu->nom,
                 'adresse' => $lieu->adresse,
@@ -355,7 +394,7 @@ class EvenementController extends Controller
         return User::query()
             ->orderBy('name')
             ->get()
-            ->map(fn (User $user): array => [
+            ->map(fn(User $user): array => [
                 'id' => $user->id,
                 'name' => $user->name,
             ])
@@ -407,67 +446,122 @@ class EvenementController extends Controller
     private function mapEvenementShow(Evenement $evenement): array
     {
         $budget = $evenement->budgets->first();
+        $typeCode = $evenement->typeEvenement?->code;
 
         return [
-            'id' => $evenement->id,
-            'titre' => $evenement->titre,
-            'description' => $evenement->description,
-            'visuel_url' => $this->storageUrl($evenement->visuel),
-            'date_debut' => optional($evenement->date_debut)?->toIso8601String(),
-            'date_fin' => optional($evenement->date_fin)?->toIso8601String(),
-            'statut' => $evenement->statut,
-            'budget_prev' => $evenement->budget_prev,
-            'inscriptions_count' => $evenement->inscriptions_count,
-            'qr_code_url' => $this->storageUrl('qrcodes/evenement-'.$evenement->id.'.svg'),
+            'id'                  => $evenement->id,
+            'titre'               => $evenement->titre,
+            'description'         => $evenement->description,
+            'visuel_url'          => $this->storageUrl($evenement->visuel),
+            'date_debut'          => optional($evenement->date_debut)?->toIso8601String(),
+            'date_fin'            => optional($evenement->date_fin)?->toIso8601String(),
+            'statut'              => $evenement->statut,
+            'budget_prev'         => $evenement->budget_prev,
+            'inscriptions_count'  => $evenement->inscriptions_count,
+            'qr_code_url'         => $this->storageUrl('qrcodes/evenement-' . $evenement->id . '.svg'),
+
+            // 🆕 Champs Salon
+            'nom_salon_hote'       => $evenement->nom_salon_hote,
+            'organisateur_externe' => $evenement->organisateur_externe,
+            'lieu_stand'           => $evenement->lieu_stand,
+            'superficie_stand'     => $evenement->superficie_stand,
+            'objectifs_stand'      => $evenement->objectifs_stand,
+            'objectif_prospects'   => $evenement->objectif_prospects,
+
             'type_evenement' => $evenement->typeEvenement ? [
-                'id' => $evenement->typeEvenement->id,
-                'nom' => $evenement->typeEvenement->nom,
+                'id'   => $evenement->typeEvenement->id,
+                'nom'  => $evenement->typeEvenement->nom,
                 'code' => $evenement->typeEvenement->code,
             ] : null,
+
             'lieu' => $evenement->lieu ? [
-                'id' => $evenement->lieu->id,
-                'nom' => $evenement->lieu->nom,
+                'id'      => $evenement->lieu->id,
+                'nom'     => $evenement->lieu->nom,
                 'adresse' => $evenement->lieu->adresse,
             ] : null,
+
             'organisateur' => $evenement->createur ? [
-                'id' => $evenement->createur->id,
+                'id'   => $evenement->createur->id,
                 'name' => $evenement->createur->name,
             ] : null,
-            'sessions' => $evenement->sessions->map(fn ($session): array => [
-                'id' => $session->id,
-                'titre' => $session->titre,
+
+            'sessions' => $evenement->sessions->map(fn($session): array => [
+                'id'          => $session->id,
+                'titre'       => $session->titre,
                 'description' => $session->description,
                 'heure_debut' => optional($session->heure_debut)?->toIso8601String(),
-                'heure_fin' => optional($session->heure_fin)?->toIso8601String(),
-                'salle' => $session->salle ? [
-                    'id' => $session->salle->id,
+                'heure_fin'   => optional($session->heure_fin)?->toIso8601String(),
+                'salle'       => $session->salle ? [
+                    'id'  => $session->salle->id,
                     'nom' => $session->salle->nom,
                 ] : null,
             ])->all(),
-            'taches' => $evenement->taches->map(fn ($tache): array => [
-                'id' => $tache->id,
-                'titre' => $tache->titre,
+
+            'taches' => $evenement->taches->map(fn($tache): array => [
+                'id'          => $tache->id,
+                'titre'       => $tache->titre,
                 'description' => $tache->description,
-                'echeance' => optional($tache->echeance)?->toDateString(),
-                'statut' => $tache->statut,
+                'echeance'    => optional($tache->echeance)?->toDateString(),
+                'statut'      => $tache->statut,
                 'responsable' => $tache->responsable ? [
-                    'id' => $tache->responsable->id,
+                    'id'   => $tache->responsable->id,
                     'name' => $tache->responsable->name,
                 ] : null,
             ])->values()->all(),
+
+            // 🆕 Tarifs
+            'tarifs' => $evenement->tarifs->map(fn($tarif): array => [
+                'id'      => $tarif->id,
+                'libelle' => $tarif->libelle,
+                'montant' => (float) $tarif->montant,
+                'devise'  => $tarif->devise ?? 'XOF',
+            ])->all(),
+
+            // 🆕 Prix (Bara Mousso, Sport, Hackathon, Challenge)
+            'prix' => $evenement->prix?->map(fn($p): array => [
+                'id'              => $p->id,
+                'rang'            => $p->rang,
+                'libelle'         => $p->libelle,
+                'description'     => $p->description,
+                'nature_prix'     => $p->nature_prix,
+                'valeur_monetaire' => (float) $p->valeur_monetaire,
+                'attribue'        => (bool) $p->attribue,
+            ])->all() ?? [],
+
+            // 🆕 Intervenants
+            'intervenants' => $evenement->intervenants?->map(fn($i): array => [
+                'id'         => $i->id,
+                'nom'        => $i->nom,
+                'prenom'     => $i->prenom,
+                'specialite' => $i->specialite,
+                'biographie' => $i->biographie,
+                'photo'      => $this->storageUrl($i->photo),
+            ])->all() ?? [],
+
+            // 🆕 Bénévoles (organisateur seulement)
+            'benevoles' => $evenement->benevoles?->map(fn($b): array => [
+                'id'            => $b->id,
+                'nom'           => $b->nom,
+                'prenom'        => $b->prenom,
+                'telephone'     => $b->telephone,
+                'poste_affecte' => $b->poste_affecte,
+                'statut'        => $b->statut,
+            ])->all() ?? [],
+
             'budget' => $this->mapBudget($budget),
-            'objectifs_rse' => $evenement->objectifsRse->map(fn (ObjectifRse $objectif): array => [
-                'id' => $objectif->id,
-                'type_impact' => $objectif->type_impact,
-                'nb_beneficiaires_directs' => $objectif->nb_beneficiaires_directs,
-                'nb_beneficiaires_indirects' => $objectif->nb_beneficiaires_indirects,
-                'nb_associations_soutenues' => $objectif->nb_associations_soutenues,
-                'nb_projets_accompagnes' => $objectif->nb_projets_accompagnes,
-                'nb_femmes_beneficiaires' => $objectif->nb_femmes_beneficiaires,
-                'montants_collectes' => $objectif->montants_collectes,
-                'retombees_partenaires' => $objectif->retombees_partenaires,
-                'nb_emplois_crees' => $objectif->nb_emplois_crees,
-                'score_environnemental' => $objectif->score_environnemental,
+
+            'objectifs_rse' => $evenement->objectifsRse->map(fn(ObjectifRse $objectif): array => [
+                'id'                          => $objectif->id,
+                'type_impact'                 => $objectif->type_impact,
+                'nb_beneficiaires_directs'    => $objectif->nb_beneficiaires_directs,
+                'nb_beneficiaires_indirects'  => $objectif->nb_beneficiaires_indirects,
+                'nb_associations_soutenues'   => $objectif->nb_associations_soutenues,
+                'nb_projets_accompagnes'      => $objectif->nb_projets_accompagnes,
+                'nb_femmes_beneficiaires'     => $objectif->nb_femmes_beneficiaires,
+                'montants_collectes'          => $objectif->montants_collectes,
+                'retombees_partenaires'       => $objectif->retombees_partenaires,
+                'nb_emplois_crees'            => $objectif->nb_emplois_crees,
+                'score_environnemental'       => $objectif->score_environnemental,
             ])->all(),
         ];
     }
@@ -523,7 +617,7 @@ class EvenementController extends Controller
             'montant_previsionnel' => $budget->montant_previsionnel,
             'devise' => $budget->devise,
             'lignes_budget' => $budget->relationLoaded('lignesBudget')
-                ? $budget->lignesBudget->map(fn ($ligne): array => [
+                ? $budget->lignesBudget->map(fn($ligne): array => [
                     'id' => $ligne->id,
                     'libelle' => $ligne->libelle,
                     'montant' => $ligne->montant,
@@ -554,7 +648,7 @@ class EvenementController extends Controller
 
                 return min(($evenement->inscriptions_count / $capacity) * 100, 100);
             })
-            ->filter(fn (?float $rate): bool => $rate !== null)
+            ->filter(fn(?float $rate): bool => $rate !== null)
             ->values();
 
         if ($rates->isEmpty()) {
@@ -578,7 +672,7 @@ class EvenementController extends Controller
         ], JSON_UNESCAPED_UNICODE);
 
         Storage::disk('public')->put(
-            'qrcodes/evenement-'.$evenement->id.'.svg',
+            'qrcodes/evenement-' . $evenement->id . '.svg',
             QrCode::format('svg')->size(280)->margin(1)->generate($payload ?: (string) $evenement->id)
         );
     }
@@ -601,7 +695,7 @@ class EvenementController extends Controller
             $data['retombees_partenaires'] ?? null,
             $data['nb_emplois_crees'] ?? null,
             $data['score_environnemental'] ?? null,
-        ])->filter(fn ($value) => $value !== null && $value !== '')->isNotEmpty();
+        ])->filter(fn($value) => $value !== null && $value !== '')->isNotEmpty();
 
         if (! $hasPayload) {
             return;

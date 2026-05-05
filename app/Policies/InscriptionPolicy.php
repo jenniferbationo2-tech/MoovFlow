@@ -20,8 +20,20 @@ class InscriptionPolicy
      */
     public function view(User $user, Inscription $inscription): bool
     {
-        return $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur'])
+         if ($user->hasAnyRole(['admin', 'responsable_dcirp'])) {
+        return true;
+    }
+
+    // Organisateur → uniquement les dossiers de ses événements
+    if ($user->hasRole('organisateur')) {
+        return (int) $inscription->evenement?->created_by === (int) $user->id;
+    }
+
+
+    return $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur'])
             || (int) $inscription->user_id === (int) $user->id;
+
+            
     }
 
     /**
@@ -48,4 +60,17 @@ class InscriptionPolicy
     {
         return $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']);
     }
+
+public function update(User $user, Inscription $inscription): bool
+{
+    if ($user->hasAnyRole(['admin', 'responsable_dcirp'])) {
+        return true;
+    }
+    // Organisateur → uniquement ses événements
+    return $user->hasRole('organisateur')
+        && (int) $inscription->evenement?->created_by === (int) $user->id;
+}
+
+
+
 }

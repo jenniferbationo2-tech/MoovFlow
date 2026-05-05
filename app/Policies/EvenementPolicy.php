@@ -10,18 +10,27 @@ class EvenementPolicy
     /**
      * Tous les utilisateurs authentifies peuvent lister les evenements.
      */
-    public function viewAny(User $user): bool
+    public function viewAny(?User $user): bool
     {
-        return $user !== null;
+        return true;
     }
 
     /**
      * Tous les utilisateurs authentifies peuvent consulter un evenement.
      */
-    public function view(User $user, Evenement $evenement): bool
-    {
-        return $user !== null;
+    public function view(?User $user, Evenement $evenement): bool
+{
+    if ($evenement->statut === 'publie' || $evenement->statut === 'en_cours' || $evenement->statut === 'termine') {
+        return true;
     }
+
+    if (!$user) {
+        return false;
+    }
+
+    return $user->hasAnyRole(['admin', 'responsable_dcirp'])
+        || (int) $evenement->created_by === (int) $user->id;
+}
 
     /**
      * Seuls les roles metier autorises peuvent creer.

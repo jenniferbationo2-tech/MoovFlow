@@ -1,99 +1,109 @@
 <script setup>
-import StatusBadge from '@/Components/StatusBadge.vue';
-import AppLayout from '@/Layouts/AppLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { computed } from 'vue'
+import { Link } from '@inertiajs/vue3'
+import PublicLayout from '@/Layouts/PublicLayout.vue'
 
-defineProps({
-    inscription: {
-        type: Object,
-        required: true,
+const props = defineProps({
+    inscription: Object,
+})
+
+const statutInfo = computed(() => ({
+    en_attente: {
+        couleur: 'amber',
+        titre:   'Dossier soumis avec succès',
+        message: 'Votre dossier a été reçu et sera analysé par l\'organisateur.',
+        icone:   '⏳',
     },
-});
-
-const formatDate = (value) => value
-    ? new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
-    : 'N/A';
+    en_analyse: {
+        couleur: 'blue',
+        titre:   'Dossier en cours d\'analyse',
+        message: 'L\'organisateur étudie actuellement votre candidature.',
+        icone:   '🔍',
+    },
+    acceptee: {
+        couleur: 'emerald',
+        titre:   'Dossier accepté !',
+        message: 'Votre candidature a été retenue. En attente de paiement.',
+        icone:   '✓',
+    },
+    confirmee: {
+        couleur: 'emerald',
+        titre:   'Inscription confirmée',
+        message: 'Votre place est garantie. À très bientôt !',
+        icone:   '✓',
+    },
+    refusee: {
+        couleur: 'red',
+        titre:   'Dossier non retenu',
+        message: props.inscription?.motif_refus ?? 'Votre dossier n\'a pas été retenu cette fois.',
+        icone:   '✗',
+    },
+}[props.inscription?.statut] || {
+    couleur: 'slate', titre: 'Statut', message: '', icone: '?',
+}))
 </script>
 
 <template>
-    <Head :title="`Inscription #${inscription.id}`" />
+    <PublicLayout>
+        <div class="mx-auto max-w-2xl px-4 py-12">
 
-    <AppLayout>
-        <template #header>
-            <div>
-                <h1 class="text-2xl font-bold text-slate-900">Detail inscription</h1>
-                <p class="mt-1 text-sm text-slate-500">Vue complete participant, paiement et presence.</p>
-            </div>
-        </template>
+            <!-- Carte principale -->
+            <div class="rounded-xl bg-card p-8 text-center shadow-card">
 
-        <div class="grid gap-6 xl:grid-cols-[1.1fr,0.9fr]">
-            <div class="space-y-6">
-                <section class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                    <div class="flex items-center justify-between">
-                        <h2 class="text-lg font-semibold text-slate-900">Participant</h2>
-                        <StatusBadge :status="inscription.statut" />
-                    </div>
-                    <div class="mt-4 space-y-2 text-sm text-slate-700">
-                        <p><strong>Nom :</strong> {{ inscription.participant.name }}</p>
-                        <p><strong>Email :</strong> {{ inscription.participant.email }}</p>
-                        <p><strong>Telephone :</strong> {{ inscription.participant.telephone || 'Non renseigne' }}</p>
-                        <p><strong>Date inscription :</strong> {{ formatDate(inscription.date_inscription) }}</p>
-                    </div>
-                </section>
+                <!-- Icône statut -->
+                <div :class="['mx-auto flex h-20 w-20 items-center justify-center rounded-full',
+                    `bg-${statutInfo.couleur}-100`]">
+                    <span :class="['font-display text-3xl', `text-${statutInfo.couleur}-700`]">
+                        {{ statutInfo.icone }}
+                    </span>
+                </div>
 
-                <section class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                    <h2 class="text-lg font-semibold text-slate-900">Evenement</h2>
-                    <div class="mt-4 space-y-2 text-sm text-slate-700">
-                        <p><strong>Titre :</strong> {{ inscription.evenement.titre }}</p>
-                        <p><strong>Debut :</strong> {{ formatDate(inscription.evenement.date_debut) }}</p>
-                        <p><strong>Fin :</strong> {{ formatDate(inscription.evenement.date_fin) }}</p>
-                        <p><strong>Tarif :</strong> {{ inscription.tarif.nom }} - {{ inscription.tarif.montant }} XOF</p>
-                    </div>
-                </section>
+                <h1 class="mt-6 font-display text-3xl font-extrabold text-text-main">
+                    {{ statutInfo.titre }}
+                </h1>
+                <p class="mt-3 text-base text-text-sub">
+                    {{ statutInfo.message }}
+                </p>
 
-                <section class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                    <div class="flex items-center justify-between">
-                        <h2 class="text-lg font-semibold text-slate-900">Paiement</h2>
-                        <StatusBadge :status="inscription.paiement?.statut || 'gratuit'" />
-                    </div>
-                    <div v-if="inscription.paiement" class="mt-4 space-y-2 text-sm text-slate-700">
-                        <p><strong>Montant :</strong> {{ inscription.paiement.montant }} XOF</p>
-                        <p><strong>Mode :</strong> {{ inscription.paiement.mode }}</p>
-                        <p><strong>Reference :</strong> {{ inscription.paiement.reference || 'N/A' }}</p>
-                        <div class="flex flex-wrap gap-3 pt-2">
-                            <Link :href="inscription.paiement.show_url" class="rounded-xl bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200">
-                                Voir paiement
-                            </Link>
-                            <a v-if="inscription.paiement.facture_url" :href="inscription.paiement.facture_url" target="_blank" class="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700">
-                                Telecharger facture
-                            </a>
-                        </div>
-                    </div>
-                    <p v-else class="mt-4 text-sm text-slate-500">Aucun paiement associe.</p>
-                </section>
+                <!-- Référence -->
+                <div class="mt-8 rounded-lg bg-page-bg p-4">
+                    <p class="text-xs font-bold uppercase tracking-wider text-text-muted">
+                        Référence du dossier
+                    </p>
+                    <p class="mt-2 font-display text-2xl font-extrabold tracking-wider text-text-main">
+                        {{ inscription.qr_code }}
+                    </p>
+                </div>
+
+                <!-- Événement -->
+                <div class="mt-6 border-t border-border-soft pt-6">
+                    <p class="text-xs font-bold uppercase tracking-wider text-text-muted">
+                        Événement
+                    </p>
+                    <p class="mt-2 font-bold text-text-main">{{ inscription.evenement?.titre }}</p>
+                </div>
+
+                <!-- Actions -->
+                <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+                    <Link href="/evenements"
+                          class="rounded-lg border border-border-soft px-5 py-2.5 text-sm font-bold text-text-sub transition hover:bg-page-bg">
+                        Retour aux événements
+                    </Link>
+                    <Link v-if="inscription.evenement"
+                          :href="`/evenements/${inscription.evenement.id}`"
+                          class="rounded-lg bg-moov-noir px-5 py-2.5 text-sm font-bold text-white transition hover:bg-moov-noir-soft">
+                        Voir l'événement
+                    </Link>
+                </div>
             </div>
 
-            <div class="space-y-6">
-                <section class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                    <h2 class="text-lg font-semibold text-slate-900">QR code</h2>
-                    <div class="mt-4 flex items-center justify-center rounded-3xl bg-slate-50 p-6">
-                        <img v-if="inscription.qr_code_url" :src="inscription.qr_code_url" alt="QR code" class="h-64 w-64" />
-                        <p v-else class="text-sm text-slate-500">QR code indisponible.</p>
-                    </div>
-                </section>
-
-                <section class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-                    <div class="flex items-center justify-between">
-                        <h2 class="text-lg font-semibold text-slate-900">Presence</h2>
-                        <StatusBadge :status="inscription.presence.statut" />
-                    </div>
-                    <div class="mt-4 space-y-2 text-sm text-slate-700">
-                        <p><strong>Statut :</strong> {{ inscription.presence.statut }}</p>
-                        <p><strong>Date scan :</strong> {{ formatDate(inscription.presence.scan_time) }}</p>
-                        <p><strong>Scanne par :</strong> {{ inscription.presence.scanneur || 'N/A' }}</p>
-                    </div>
-                </section>
+            <!-- Notification email -->
+            <div class="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-center">
+                <p class="text-sm text-blue-900">
+                    Vous serez notifié(e) par email à chaque étape du traitement de votre dossier.
+                </p>
             </div>
+
         </div>
-    </AppLayout>
+    </PublicLayout>
 </template>
