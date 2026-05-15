@@ -2,50 +2,64 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
-use Illuminate\Database\Eloquent\Attributes\Hidden;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'nom', 'prenom', 'email', 'password', 'telephone', 'is_active','tentatives_connexions','bloque_jusqu_a'])]
-#[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, HasRoles, LogsActivity;
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
+    protected $fillable = [
+        'name',
+        'nom',
+        'prenom',
+        'email',
+        'password',
+        'telephone',
+        'is_active',
+        'tentatives_connexion',
+        'bloque_jusqu_a',
+    ];
+
+    
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-            'is_active' => 'boolean',
-            'bloque_jusqu_a'=>'datetime',
+            'email_verified_at'   => 'datetime',
+            'password'            => 'hashed',
+            'is_active'           => 'boolean',
+            'bloque_jusqu_a'      => 'datetime',
         ];
     }
 
-    /**
-     * Configure la journalisation d activite sur les colonnes sensibles.
-     */
-    public function getActivitylogOptions(): LogOptions
+     function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
             ->useLogName('user')
-            ->logOnly(['name', 'nom', 'prenom', 'email', 'telephone', 'is_active'])
+            ->logOnly([
+                'name',
+                'nom',
+                'prenom',
+                'email',
+                'telephone',
+                'is_active',
+            ])
             ->logOnlyDirty()
-            ->setDescriptionForEvent(fn(string $eventName): string => "Utilisateur {$eventName}");
+            ->setDescriptionForEvent(
+                fn(string $eventName): string => "Utilisateur {$eventName}"
+            );
     }
 
     public function inscriptions(): HasMany
@@ -118,10 +132,6 @@ class User extends Authenticatable
         return $this->hasMany(Presence::class, 'scane_par');
     }
 
-    /**
-     * Vérifie si le compte est actuellement bloqué.
-     * Déblocage automatique si le délai est dépassé.
-     */
     public function estBloque(): bool
     {
         if (!$this->bloque_jusqu_a) {
@@ -129,23 +139,21 @@ class User extends Authenticatable
         }
 
         if (now()->isAfter($this->bloque_jusqu_a)) {
+
             // Déblocage automatique
             $this->update([
                 'tentatives_connexion' => 0,
-                'bloque_jusqu_a'       => null,
+                'bloque_jusqu_a' => null,
             ]);
+
             return false;
         }
 
         return true;
     }
 
-    /**
-     * Incrémente les tentatives. Bloque le compte au bout de 3.
-     */
     public function incrementerTentatives(): void
     {
-        // ⚠️ NE PAS utiliser increment() — ne déclenche pas les events
         $this->tentatives_connexion += 1;
 
         if ($this->tentatives_connexion >= 3) {
@@ -154,15 +162,25 @@ class User extends Authenticatable
 
         $this->save();
     }
-
-    /**
-     * Réinitialise les tentatives (à appeler après connexion réussie).
-     */
     public function reinitialiserTentatives(): void
     {
         $this->update([
             'tentatives_connexion' => 0,
-            'bloque_jusqu_a'       => null,
+            'bloque_jusqu_a' => null,
         ]);
+    }
+
+    public function inscriptionsPreselectionnees(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Inscription::class, 'presele_par_id');
+    }
+
+    public function inscriptionsRecommandees(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Inscription::class, 'recommande_par_id');
+    }
+    public function inscriptionsValidees(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Inscription::class, 'valide_par_id');
     }
 }

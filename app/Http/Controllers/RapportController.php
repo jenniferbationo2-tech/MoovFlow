@@ -3,148 +3,235 @@
 namespace App\Http\Controllers;
 
 use App\Models\Evenement;
-use App\Models\TypeEvenement;
-use App\Services\DashboardAggregatorService;
-use App\Services\ExportService;
+use App\Models\Inscription;
+use App\Models\ObjectifRse;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Gate;
+use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class RapportController extends Controller
 {
-    public function __construct(
-        private readonly DashboardAggregatorService $dashboardAggregatorService,
-        private readonly ExportService $exportService
-    ) {
+    private function StaffAccès(): void
+    {
+        $user = Auth::user();
+        abort_unless(
+            $user && $user->hasAnyRole(['admin', 'responsable_dcirp']),
+            403,
+            'Accès réservé au staff dCIRP.'
+        );
     }
 
     /**
-     * Affiche la liste des rapports disponibles.
+     * Page principale Impact RSE & Rapports.
      */
     public function index(Request $request): Response
     {
-        Gate::authorize('rapports.viewAny');
+        $this->StaffAccès();
 
-        $filters = [
-            'type' => $request->string('type')->toString(),
-            'periode_debut' => $request->string('periode_debut')->toString(),
-            'periode_fin' => $request->string('periode_fin')->toString(),
-        ];
+        // Filtres
+        $evenementId = $request->input('evenement_id');
+        $periode     = $request->input('periode', '12mois');
 
-        $query = Evenement::query()
-            ->with(['typeEvenement', 'budgets'])
-            ->withCount(['inscriptions', 'enquetes'])
-            ->latest('date_debut');
+        // Construire la requête de base avec filtres
+        $rseQuery = ObjectifRse::query();
+        $eventsQuery = Evenement::query();
+        $inscQuery = Inscription::query();
 
-        if ($filters['type'] !== '') {
-            $query->where('type_evenement_id', $filters['type']);
+        if ($evenementId) {
+            $rseQuery->where('evenement_id', $evenementId);
+            $eventsQuery->where('id', $evenementId);
+            $inscQuery->where('evenement_id', $evenementId);
         }
 
-        if ($filters['periode_debut'] !== '') {
-            $query->whereDate('date_debut', '>=', $filters['periode_debut']);
+        if ($periode === '12mois') {
+            $eventsQuery->where('date_debut', '>=', now()->subYear());
+            $inscQuery->whereHas('evenement', fn ($q) => $q->where('date_debut', '>=', now()->subYear()));
+        } elseif ($periode === '6mois') {
+            $eventsQuery->where('date_debut', '>=', now()->subMonths(6));
+            $inscQuery->whereHas('evenement', fn ($q) => $q->where('date_debut', '>=', now()->subMonths(6)));
+        } elseif ($periode === '3mois') {
+            $eventsQuery->where('date_debut', '>=', now()->subMonths(3));
+            $inscQuery->whereHas('evenement', fn ($q) => $q->where('date_debut', '>=', now()->subMonths(3)));
         }
 
-        if ($filters['periode_fin'] !== '') {
-            $query->whereDate('date_fin', '<=', $filters['periode_fin']);
-        }
+        // KPIs RSE globaux
+        $totalBeneficiairesDirects   = (int) (clone $rseQuery)->sum('nb_beneficiaires_directs');
+        $totalBeneficiairesIndirects = (int) (clone $rseQuery)->sum('nb_beneficiaires_indirects');
+        $totalFemmes                 = (int) (clone $rseQuery)->sum('nb_femmes_beneficiaires');
+        $totalAssociations           = (int) (clone $rseQuery)->sum('nb_associations_soutenues');
+        $totalProjets                = (int) (clone $rseQuery)->sum('nb_projets_accompagnes');
+        $totalEmplois                = (int) (clone $rseQuery)->sum('nb_emplois_crees');
+        $totalCollectes              = (float) (clone $rseQuery)->sum('montants_collectes');
+        $totalRetombees              = (float) (clone $rseQuery)->sum('retombees_partenaires');
+
+        $tauxFemmes = $totalBeneficiairesDirects > 0
+            ? round(($totalFemmes / $totalBeneficiairesDirects) * 100, 1)
+            : 0;
+
+        // Évolution mensuelle (12 derniers mois)
+        $evolutionMensuelle = $this->calculerEvolutionMensuelle($evenementId);
+
+        // Performance par type d'événement
+        $performanceTypes = DB::table('evenements')
+            ->join('types_evenement', 'types_evenement.id', '=', 'evenements.type_evenement_id')
+            ->leftJoin('inscriptions', 'inscriptions.evenement_id', '=', 'evenements.id')
+            ->selectRaw('
+                types_evenement.nom as type_nom,
+                types_evenement.code as type_code,
+                COUNT(DISTINCT evenements.id) as nb_evenements,
+                COUNT(DISTINCT inscriptions.id) as nb_inscriptions
+            ')
+            ->groupBy('types_evenement.id', 'types_evenement.nom', 'types_evenement.code')
+            ->orderByDesc('nb_inscriptions')
+            ->get()
+            ->map(fn ($r) => [
+                'type'           => $r->type_nom,
+                'code'           => $r->type_code,
+                'nb_evenements'  => (int) $r->nb_evenements,
+                'nb_inscriptions'=> (int) $r->nb_inscriptions,
+            ])
+            ->all();
+
+        // Top événements par impact
+        $topEvenements = Evenement::query()
+            ->with(['typeEvenement:id,nom,code', 'objectifsRse'])
+            ->whereHas('objectifsRse')
+            ->withCount('inscriptions')
+            ->get()
+            ->map(function (Evenement $e) {
+                $rse = $e->objectifsRse->first();
+                return [
+                    'id'                => $e->id,
+                    'titre'             => $e->titre,
+                    'date_debut'        => optional($e->date_debut)?->toIso8601String(),
+                    'type'              => $e->typeEvenement?->nom,
+                    'type_code'         => $e->typeEvenement?->code,
+                    'inscriptions_count'=> $e->inscriptions_count,
+                    'beneficiaires'     => (int) ($rse?->nb_beneficiaires_directs ?? 0),
+                ];
+            })
+            ->sortByDesc('beneficiaires')
+            ->take(10)
+            ->values()
+            ->all();
+
+        // Liste des événements pour filtre
+        $evenements = Evenement::query()
+            ->select('id', 'titre')
+            ->orderBy('titre')
+            ->get();
 
         return Inertia::render('Rapports/Index', [
-            'filters' => $filters,
-            'types' => TypeEvenement::query()->orderBy('nom')->get(['id', 'nom']),
-            'evenements' => $query->get()->map(fn (Evenement $evenement): array => [
-                'id' => $evenement->id,
-                'titre' => $evenement->titre,
-                'statut' => $evenement->statut,
-                'type' => $evenement->typeEvenement?->nom ?? 'Non defini',
-                'date_debut' => optional($evenement->date_debut)?->toIso8601String(),
-                'date_fin' => optional($evenement->date_fin)?->toIso8601String(),
-                'inscriptions_count' => $evenement->inscriptions_count,
-                'enquetes_count' => $evenement->enquetes_count,
-                'budget_previsionnel' => (float) ($evenement->budgets->first()?->montant_previsionnel ?? $evenement->budget_prev ?? 0),
-            ])->values()->all(),
+            'kpis' => [
+                'beneficiaires_directs'   => $totalBeneficiairesDirects,
+                'beneficiaires_indirects' => $totalBeneficiairesIndirects,
+                'femmes'                  => $totalFemmes,
+                'taux_femmes'             => $tauxFemmes,
+                'associations'            => $totalAssociations,
+                'projets'                 => $totalProjets,
+                'emplois'                 => $totalEmplois,
+                'collectes'               => $totalCollectes,
+                'retombees'               => $totalRetombees,
+            ],
+            'evolutionMensuelle' => $evolutionMensuelle,
+            'performanceTypes'   => $performanceTypes,
+            'topEvenements'      => $topEvenements,
+            'evenements'         => $evenements,
+            'filters'            => [
+                'evenement_id' => $evenementId,
+                'periode'      => $periode,
+            ],
         ]);
     }
 
     /**
-     * Affiche le rapport de participation d'un événement.
+     * Évolution mensuelle des bénéficiaires sur 12 mois.
      */
-    public function participation(Evenement $evenement): Response
+    private function calculerEvolutionMensuelle(?int $evenementId = null): array
     {
-        Gate::authorize('rapports.viewAny');
+        $months = collect(range(11, 0))->map(function ($i) {
+            return now()->subMonths($i)->format('Y-m');
+        });
 
-        $stats = $this->dashboardAggregatorService->getEventStats($evenement);
+        $query = ObjectifRse::query()
+            ->join('evenements', 'evenements.id', '=', 'objectifs_rse.evenement_id')
+            ->selectRaw('DATE_FORMAT(evenements.date_debut, "%Y-%m") as mois, SUM(nb_beneficiaires_directs) as total')
+            ->whereNotNull('evenements.date_debut')
+            ->where('evenements.date_debut', '>=', now()->subYear())
+            ->groupBy('mois');
 
-        return Inertia::render('Rapports/Participation', [
-            'evenement' => $this->evenementPayload($evenement),
-            'rapport' => $stats['participation'],
-        ]);
-    }
-
-    /**
-     * Affiche le rapport financier d'un événement.
-     */
-    public function financier(Evenement $evenement): Response
-    {
-        Gate::authorize('rapports.viewAny');
-
-        $stats = $this->dashboardAggregatorService->getEventStats($evenement);
-
-        return Inertia::render('Rapports/Financier', [
-            'evenement' => $this->evenementPayload($evenement),
-            'rapport' => $stats['financier'],
-        ]);
-    }
-
-    /**
-     * Affiche le rapport RSE d'un événement.
-     */
-    public function rse(Evenement $evenement): Response
-    {
-        Gate::authorize('rapports.viewAny');
-
-        $stats = $this->dashboardAggregatorService->getEventStats($evenement);
-
-        return Inertia::render('Rapports/RSE', [
-            'evenement' => $this->evenementPayload($evenement),
-            'rapport' => $stats['rse'],
-        ]);
-    }
-
-    /**
-     * Exporte un rapport au format demandé.
-     */
-    public function export(Request $request, Evenement $evenement)
-    {
-        Gate::authorize('rapports.export');
-
-        $validated = $request->validate([
-            'type' => ['required', 'in:participation,financier,rse,presentation'],
-            'format' => ['required', 'in:pdf,excel,ppt'],
-        ]);
-
-        if ($validated['format'] === 'pdf') {
-            return $this->exportService->exportPDF($evenement, $validated['type']);
+        if ($evenementId) {
+            $query->where('evenements.id', $evenementId);
         }
 
-        if ($validated['format'] === 'excel') {
-            return $this->exportService->exportExcel($evenement, $validated['type']);
-        }
+        $data = $query->pluck('total', 'mois');
 
-        return $this->exportService->exportPresentation($evenement);
+        return $months->map(function ($mois) use ($data) {
+            $date = \Carbon\Carbon::createFromFormat('Y-m', $mois);
+            return [
+                'mois'    => $date->locale('fr')->isoFormat('MMM'),
+                'mois_full'=> $date->format('Y-m'),
+                'total'   => (int) ($data[$mois] ?? 0),
+            ];
+        })->all();
     }
 
     /**
-     * @return array<string, mixed>
+     * Export PDF du rapport global.
      */
-    private function evenementPayload(Evenement $evenement): array
+    public function exportGlobal(Request $request): HttpResponse
     {
-        return [
-            'id' => $evenement->id,
-            'titre' => $evenement->titre,
-            'statut' => $evenement->statut,
-            'date_debut' => optional($evenement->date_debut)?->toIso8601String(),
-            'date_fin' => optional($evenement->date_fin)?->toIso8601String(),
-        ];
+        $this->StaffAccès();
+
+        $totalBeneficiairesDirects   = (int) ObjectifRse::sum('nb_beneficiaires_directs');
+        $totalFemmes                 = (int) ObjectifRse::sum('nb_femmes_beneficiaires');
+        $totalAssociations           = (int) ObjectifRse::sum('nb_associations_soutenues');
+        $totalProjets                = (int) ObjectifRse::sum('nb_projets_accompagnes');
+        $totalEmplois                = (int) ObjectifRse::sum('nb_emplois_crees');
+        $totalCollectes              = (float) ObjectifRse::sum('montants_collectes');
+
+        $tauxFemmes = $totalBeneficiairesDirects > 0
+            ? round(($totalFemmes / $totalBeneficiairesDirects) * 100, 1)
+            : 0;
+
+        $evenements = Evenement::query()
+            ->with(['typeEvenement', 'lieu', 'objectifsRse'])
+            ->whereHas('objectifsRse')
+            ->orderByDesc('date_debut')
+            ->get();
+
+        $performanceTypes = DB::table('evenements')
+            ->join('types_evenement', 'types_evenement.id', '=', 'evenements.type_evenement_id')
+            ->leftJoin('inscriptions', 'inscriptions.evenement_id', '=', 'evenements.id')
+            ->selectRaw('
+                types_evenement.nom as type_nom,
+                COUNT(DISTINCT evenements.id) as nb_evenements,
+                COUNT(DISTINCT inscriptions.id) as nb_inscriptions
+            ')
+            ->groupBy('types_evenement.id', 'types_evenement.nom')
+            ->orderByDesc('nb_inscriptions')
+            ->get();
+
+        $pdf = Pdf::loadView('rapports.global-pdf', [
+            'date_generation' => now()->locale('fr')->isoFormat('DD MMMM YYYY'),
+            'kpis' => [
+                'beneficiaires_directs' => $totalBeneficiairesDirects,
+                'femmes'                => $totalFemmes,
+                'taux_femmes'           => $tauxFemmes,
+                'associations'          => $totalAssociations,
+                'projets'               => $totalProjets,
+                'emplois'               => $totalEmplois,
+                'collectes'             => $totalCollectes,
+            ],
+            'evenements'       => $evenements,
+            'performanceTypes' => $performanceTypes,
+            'genere_par'       => Auth::user(),
+        ]);
+
+        return $pdf->download('rapport-impact-rse-' . now()->format('Y-m-d') . '.pdf');
     }
 }

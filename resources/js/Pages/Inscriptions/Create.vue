@@ -56,9 +56,6 @@ const titreFormulaire = computed(() => ({
     CHALLENGE:   'Dépôt d\'idée — Challenge Innovation',
     FORMATION:   'Inscription — Formation numérique',
     HACK:        'Inscription équipe — Hackathon',
-    SALON:       'Inscription — Salon',
-    ATELIER:     'Inscription — Atelier',
-    WEBINAIRE:   'Inscription — Webinaire',
 }[typeCode.value] || 'Formulaire d\'inscription'))
 
 const formaterDate = (d) => {

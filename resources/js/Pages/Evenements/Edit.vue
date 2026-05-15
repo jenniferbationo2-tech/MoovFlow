@@ -1,5 +1,5 @@
 <script setup>
-import AppLayout from '@/Layouts/AppLayout.vue';
+import DashboardLayout from '@/Layouts/DashboardLayout.vue';
 import EvenementForm from '@/Pages/Evenements/Partials/EvenementForm.vue';
 import { Head } from '@inertiajs/vue3';
 
@@ -26,7 +26,7 @@ defineProps({
 <template>
     <Head title="Modifier un événement" />
 
-    <AppLayout>
+    <DashboardLayout>
         <template #header>
             <div>
                 <h1 class="text-2xl font-bold text-slate-900">Modifier l'événement</h1>
@@ -44,5 +44,5 @@ defineProps({
             :cancel-url="route('evenements.show', evenement.id)"
             submit-label="Sauvegarder"
         />
-    </AppLayout>
+    </DashboardLayout>
 </template>

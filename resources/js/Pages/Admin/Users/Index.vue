@@ -113,7 +113,7 @@ const confirmerResetMdp = () => {
 const toggleActif = (user) => {
     const action = user.is_active ? 'désactiver' : 'activer'
     if (confirm(`Voulez-vous vraiment ${action} le compte de ${user.prenom} ${user.nom} ?`)) {
-        router.post(`/admin/users/${user.id}/toggle`)
+        router.patch(`/admin/users/${user.id}/toggle-active`)
     }
 }
 

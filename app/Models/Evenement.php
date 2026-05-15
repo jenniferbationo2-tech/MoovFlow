@@ -33,6 +33,57 @@ class Evenement extends Model
         'superficie_stand',
         'objectifs_stand',
         'objectif_prospects',
+        'date_demande_validation',
+        'date_publication',
+        'validated_by',
+        'motif_rejet',
+        'public_cible',
+        'cible_beneficiaires',
+        'objectifs_principaux',
+        'criteres_candidature',
+        'domaines_acceptes',
+        'dotation_principale',
+        'nombre_laureates',
+        'age_min',
+        'age_max',
+        'theme_principal',
+        'profession_cible',
+        'programme_agenda',
+        'diffusion_en_ligne',
+        'lien_zoom',
+        'document_joint',
+        'discipline',
+        'categorie_age',
+        'nombre_max_equipes',
+        'effectif_min',
+        'effectif_max',
+        'format_competition',
+        'trophees_prix',
+        'thematique_challenge',
+        'criteres_evaluation',
+        'stades_acceptes',
+        'dotation_totale',
+        'date_cloture_dossiers',
+        'domaine_formation',
+        'niveau_requis',
+        'duree_heures',
+        'certification',
+        'nom_certification',
+        'programme_detaille',
+        'materiel_requis',
+        'theme_hackathon',
+        'duree_heures_hack',
+        'equipe_min',
+        'equipe_max',
+        'technologies_suggerees',
+        'criteres_evaluation_hack',
+        'nom_salon_hote',
+        'organisateur_externe',
+        'lieu_stand',
+        'superficie_stand',
+        'objectifs_stand',
+        'objectif_prospects',
+
     ];
 
     protected $casts = [
@@ -40,11 +91,22 @@ class Evenement extends Model
         'date_fin' => 'datetime',
         'budget_prev' => 'decimal:2',
         'deleted_at' => 'datetime',
-    ];
+        'date_demande_validation' => 'datetime',
+        'date_publication'        => 'datetime',
 
-    /**
-     * Configure la journalisation d activite.
-     */
+        'domaines_acceptes'      => 'array',
+        'stades_acceptes'        => 'array',
+        'technologies_suggerees' => 'array',
+
+        'diffusion_en_ligne' => 'boolean',
+        'certification'      => 'boolean',
+
+        'date_cloture_dossiers' => 'date',
+        'dotation_principale' => 'decimal:2',
+        'dotation_totale'     => 'decimal:2',
+    ];
+    protected $appends = ['visuel_url', 'reglement_pdf_url'];
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
@@ -52,6 +114,15 @@ class Evenement extends Model
             ->logOnly(['titre', 'type_evenement_id', 'date_debut', 'date_fin', 'lieu_id', 'statut', 'budget_prev', 'created_by'])
             ->logOnlyDirty()
             ->setDescriptionForEvent(fn(string $eventName): string => "Evenement {$eventName}");
+    }
+    public function getVisuelUrlAttribute(): ?string
+    {
+        return $this->visuel ? asset('storage/' . $this->visuel) : null;
+    }
+
+    public function getReglementPdfUrlAttribute(): ?string
+    {
+        return $this->reglement_pdf ? asset('storage/' . $this->reglement_pdf) : null;
     }
 
     public function typeEvenement(): BelongsTo
@@ -153,7 +224,7 @@ class Evenement extends Model
     {
         return $this->hasMany(B2BMeeting::class);
     }
-    // ── NOUVELLES RELATIONS ──────────────────
+
 
     public function dossiers(): HasMany
     {
@@ -182,10 +253,6 @@ class Evenement extends Model
     }
 
 
-
-    /**
-     * Vérifie si l'événement a des prix à attribuer.
-     */
     public function aPrix(): bool
     {
         return in_array($this->typeEvenement?->code, [
@@ -196,21 +263,13 @@ class Evenement extends Model
         ]);
     }
 
-    /**
-     * Vérifie si l'événement est compétitif.
-     */
     public function estCompetitif(): bool
     {
         return $this->aPrix();
     }
 
-    /**
-     * Vérifie si c'est un salon (Moov participe à un événement externe).
-     */
     public function estSalon(): bool
     {
         return $this->typeEvenement?->code === 'SALON';
     }
-
-
 }

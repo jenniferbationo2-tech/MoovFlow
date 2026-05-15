@@ -19,13 +19,13 @@ use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
+
 class InscriptionController extends Controller
 {
     public function __construct(
         private readonly QrCodeService $qrCodeService,
         private readonly PaiementService $paiementService,
-    ) {
-    }
+    ) {}
 
     /**
      * Liste globale des dossiers d'inscription (pour staff).
@@ -41,13 +41,13 @@ class InscriptionController extends Controller
                 'user:id,nom,prenom,email,telephone',
                 'evenement:id,titre,type_evenement_id,created_by',
                 'evenement.typeEvenement:id,nom,code',
-                'tarif:id,libelle,montant,devise',
+                'tarif:id,nom,montant',
                 'dossier',
                 'analysePar:id,nom,prenom',
             ]);
 
         if ($user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp'])) {
-            $query->whereHas('evenement', fn ($q) => $q->where('created_by', $user->id));
+            $query->whereHas('evenement', fn($q) => $q->where('created_by', $user->id));
         }
 
         if ($request->filled('statut')) {
@@ -59,20 +59,20 @@ class InscriptionController extends Controller
         if ($request->filled('search')) {
             $q = $request->search;
             $query->where(function ($sub) use ($q) {
-                $sub->whereHas('user', fn ($u) => $u->where('nom', 'like', "%$q%")
-                                                    ->orWhere('prenom', 'like', "%$q%")
-                                                    ->orWhere('email', 'like', "%$q%"))
+                $sub->whereHas('user', fn($u) => $u->where('nom', 'like', "%$q%")
+                    ->orWhere('prenom', 'like', "%$q%")
+                    ->orWhere('email', 'like', "%$q%"))
                     ->orWhere('qr_code', 'like', "%$q%");
             });
         }
 
-        $inscriptions = $query->latest()->paginate(20)->through(fn (Inscription $i) => [
+        $inscriptions = $query->latest()->paginate(20)->through(fn(Inscription $i) => [
             'id'          => $i->id,
             'qr_code'     => $i->qr_code,
             'statut'      => $i->statut,
             'motif_refus' => $i->motif_refus,
             'created_at'  => optional($i->created_at)?->toIso8601String(),
-            'date_analyse'=> optional($i->date_analyse)?->toIso8601String(),
+            'date_analyse' => optional($i->date_analyse)?->toIso8601String(),
             'user' => $i->user ? [
                 'id'        => $i->user->id,
                 'nom'       => $i->user->nom,
@@ -89,9 +89,9 @@ class InscriptionController extends Controller
                 ] : null,
             ] : null,
             'tarif' => $i->tarif ? [
-                'libelle' => $i->tarif->libelle,
+                'libelle' => $i->tarif->nom,
                 'montant' => (float) $i->tarif->montant,
-                'devise'  => $i->tarif->devise ?? 'XOF',
+                'devise'  => 'FCFA',
             ] : null,
             'dossier' => $i->dossier?->toArray(),
             'analyse_par' => $i->analysePar ? [
@@ -102,7 +102,7 @@ class InscriptionController extends Controller
 
         $statsQuery = Inscription::query();
         if ($user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp'])) {
-            $statsQuery->whereHas('evenement', fn ($q) => $q->where('created_by', $user->id));
+            $statsQuery->whereHas('evenement', fn($q) => $q->where('created_by', $user->id));
         }
 
         $stats = [
@@ -116,8 +116,10 @@ class InscriptionController extends Controller
 
         $evenements = Evenement::query()
             ->select('id', 'titre')
-            ->when($user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp']),
-                fn ($q) => $q->where('created_by', $user->id))
+            ->when(
+                $user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp']),
+                fn($q) => $q->where('created_by', $user->id)
+            )
             ->orderBy('titre')
             ->get();
 
@@ -140,6 +142,11 @@ class InscriptionController extends Controller
         }
 
         $evenement->load(['typeEvenement', 'lieu', 'tarifs']);
+
+        if ($evenement->typeEvenement?->code === 'SALON') {
+            return redirect()->route('evenements.show', $evenement)
+                ->with('info', 'Cet événement est organisé par un tiers. Visitez le stand Moov sur place.');
+        }
 
         if ($evenement->statut !== 'publie') {
             return redirect()->route('evenements.show', $evenement)
@@ -172,86 +179,86 @@ class InscriptionController extends Controller
                     'nom'  => $evenement->typeEvenement->nom,
                     'code' => $evenement->typeEvenement->code,
                 ] : null,
-                'tarifs' => $evenement->tarifs->map(fn ($t) => [
+                'tarifs' => $evenement->tarifs->map(fn($t) => [
                     'id'      => $t->id,
-                    'libelle' => $t->libelle,
+                    'libelle' => $t->nom,
                     'montant' => (float) $t->montant,
-                    'devise'  => $t->devise ?? 'XOF',
+                    'devise'  => 'FCFA',
                 ])->all(),
             ],
         ]);
     }
 
-    
-public function show(Inscription $inscription): Response
-{
-    Gate::authorize('view', $inscription);
 
-    $inscription->load([
-        'user',
-        'evenement.typeEvenement',
-        'evenement.lieu',
-        'tarif',
-        'dossier',
-        'analysePar',
-        'paiement',
-    ]);
+    public function show(Inscription $inscription): Response
+    {
+        Gate::authorize('view', $inscription);
 
-    $user = Auth::user();
-    $estStaff = $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']);
+        $inscription->load([
+            'user',
+            'evenement.typeEvenement',
+            'evenement.lieu',
+            'tarif',
+            'dossier',
+            'analysePar',
+            'paiement',
+        ]);
 
-    $payload = [
-        'id'          => $inscription->id,
-        'qr_code'     => $inscription->qr_code,
-        'statut'      => $inscription->statut,
-        'motif_refus' => $inscription->motif_refus,
-        'created_at'  => optional($inscription->created_at)?->toIso8601String(),
-        'date_analyse'=> optional($inscription->date_analyse)?->toIso8601String(),
-        'user' => $inscription->user ? [
-            'id'        => $inscription->user->id,
-            'nom'       => $inscription->user->nom,
-            'prenom'    => $inscription->user->prenom,
-            'email'     => $inscription->user->email,
-            'telephone' => $inscription->user->telephone,
-        ] : null,
-        'evenement' => $inscription->evenement ? [
-            'id'         => $inscription->evenement->id,
-            'titre'      => $inscription->evenement->titre,
-            'date_debut' => optional($inscription->evenement->date_debut)?->toIso8601String(),
-            'lieu'       => $inscription->evenement->lieu ? [
-                'nom' => $inscription->evenement->lieu->nom,
+        $user = Auth::user();
+        $estStaff = $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']);
+
+        $payload = [
+            'id'          => $inscription->id,
+            'qr_code'     => $inscription->qr_code,
+            'statut'      => $inscription->statut,
+            'motif_refus' => $inscription->motif_refus,
+            'created_at'  => optional($inscription->created_at)?->toIso8601String(),
+            'date_analyse' => optional($inscription->date_analyse)?->toIso8601String(),
+            'user' => $inscription->user ? [
+                'id'        => $inscription->user->id,
+                'nom'       => $inscription->user->nom,
+                'prenom'    => $inscription->user->prenom,
+                'email'     => $inscription->user->email,
+                'telephone' => $inscription->user->telephone,
             ] : null,
-            'type'       => $inscription->evenement->typeEvenement ? [
-                'nom'  => $inscription->evenement->typeEvenement->nom,
-                'code' => $inscription->evenement->typeEvenement->code,
+            'evenement' => $inscription->evenement ? [
+                'id'         => $inscription->evenement->id,
+                'titre'      => $inscription->evenement->titre,
+                'date_debut' => optional($inscription->evenement->date_debut)?->toIso8601String(),
+                'lieu'       => $inscription->evenement->lieu ? [
+                    'nom' => $inscription->evenement->lieu->nom,
+                ] : null,
+                'type'       => $inscription->evenement->typeEvenement ? [
+                    'nom'  => $inscription->evenement->typeEvenement->nom,
+                    'code' => $inscription->evenement->typeEvenement->code,
+                ] : null,
             ] : null,
-        ] : null,
-        'tarif' => $inscription->tarif ? [
-            'libelle' => $inscription->tarif->libelle,
-            'montant' => (float) $inscription->tarif->montant,
-            'devise'  => $inscription->tarif->devise ?? 'XOF',
-        ] : null,
-        'dossier' => $inscription->dossier ? array_merge(
-            $inscription->dossier->toArray(),
-            [
-                'fichier_joint_url' => $inscription->dossier->fichier_joint
-                    ? asset('storage/' . $inscription->dossier->fichier_joint)
-                    : null,
-            ]
-        ) : null,
-        'analyse_par' => $inscription->analysePar ? [
-            'nom'    => $inscription->analysePar->nom,
-            'prenom' => $inscription->analysePar->prenom,
-        ] : null,
-        'paiement' => $inscription->paiement,
-    ];
+            'tarif' => $inscription->tarif ? [
+                'libelle' => $inscription->tarif->libelle,
+                'montant' => (float) $inscription->tarif->montant,
+                'devise'  => $inscription->tarif->devise ?? 'XOF',
+            ] : null,
+            'dossier' => $inscription->dossier ? array_merge(
+                $inscription->dossier->toArray(),
+                [
+                    'fichier_joint_url' => $inscription->dossier->fichier_joint
+                        ? asset('storage/' . $inscription->dossier->fichier_joint)
+                        : null,
+                ]
+            ) : null,
+            'analyse_par' => $inscription->analysePar ? [
+                'nom'    => $inscription->analysePar->nom,
+                'prenom' => $inscription->analysePar->prenom,
+            ] : null,
+            'paiement' => $inscription->paiement,
+        ];
 
-    // Vue staff vs participant
-    return Inertia::render(
-        $estStaff ? 'Inscriptions/Detail' : 'Inscriptions/Show',
-        ['inscription' => $payload]
-    );
-}
+        // Vue staff vs participant
+        return Inertia::render(
+            $estStaff ? 'Inscriptions/Detail' : 'Inscriptions/Show',
+            ['inscription' => $payload]
+        );
+    }
 
     /**
      * Crée une nouvelle préinscription.
@@ -286,11 +293,11 @@ public function show(Inscription $inscription): Response
             'nom_equipe_hack'        => ['nullable', 'string', 'max:255'],
             'nb_membres_equipe'      => ['nullable', 'integer', 'min:1'],
             // Formation
-            'niveau_formation'       => ['nullable', Rule::in(['debutant','intermediaire','avance'])],
-            'objectifs_apprentissage'=> ['nullable', 'string'],
+            'niveau_formation'       => ['nullable', Rule::in(['debutant', 'intermediaire', 'avance'])],
+            'objectifs_apprentissage' => ['nullable', 'string'],
             // Salon
             'secteur_activite'       => ['nullable', 'string', 'max:255'],
-            'type_visite_salon'      => ['nullable', Rule::in(['visiteur','partenaire_potentiel','client_potentiel'])],
+            'type_visite_salon'      => ['nullable', Rule::in(['visiteur', 'partenaire_potentiel', 'client_potentiel'])],
             'interets_b2b'           => ['nullable', 'string'],
             // Challenge
             'titre_idee'             => ['nullable', 'string', 'max:255'],
@@ -333,7 +340,12 @@ public function show(Inscription $inscription): Response
         $inscription = null;
 
         DB::transaction(function () use (
-            &$inscription, $participant, $evenement, $tarif, $validated, $request
+            &$inscription,
+            $participant,
+            $evenement,
+            $tarif,
+            $validated,
+            $request
         ): void {
 
             $inscription = Inscription::query()->create([
@@ -418,8 +430,10 @@ public function show(Inscription $inscription): Response
         Gate::authorize('update', $inscription);
 
         if ($inscription->statut !== 'en_attente') {
-            return back()->with('error',
-                "Ce dossier ne peut pas être analysé (statut : {$inscription->statut}).");
+            return back()->with(
+                'error',
+                "Ce dossier ne peut pas être analysé (statut : {$inscription->statut})."
+            );
         }
 
         $inscription->update([
@@ -436,8 +450,10 @@ public function show(Inscription $inscription): Response
         Gate::authorize('update', $inscription);
 
         if (!in_array($inscription->statut, ['en_attente', 'en_analyse'])) {
-            return back()->with('error',
-                "Ce dossier ne peut pas être accepté (statut : {$inscription->statut}).");
+            return back()->with(
+                'error',
+                "Ce dossier ne peut pas être accepté (statut : {$inscription->statut})."
+            );
         }
 
         $tarif = $inscription->tarif;
@@ -453,7 +469,8 @@ public function show(Inscription $inscription): Response
             $this->qrCodeService->generate($inscription);
         }
 
-        return back()->with('success',
+        return back()->with(
+            'success',
             $estGratuit
                 ? 'Dossier accepté et confirmé. QR code généré.'
                 : 'Dossier accepté. En attente de paiement.'
@@ -472,8 +489,10 @@ public function show(Inscription $inscription): Response
         ]);
 
         if (!in_array($inscription->statut, ['en_attente', 'en_analyse'])) {
-            return back()->with('error',
-                "Ce dossier ne peut pas être refusé (statut : {$inscription->statut}).");
+            return back()->with(
+                'error',
+                "Ce dossier ne peut pas être refusé (statut : {$inscription->statut})."
+            );
         }
 
         $inscription->update([
@@ -487,88 +506,90 @@ public function show(Inscription $inscription): Response
     }
 
     /**
- * Liste les inscriptions de l'utilisateur connecté (vue participant).
- */
-public function mesInscriptions(Request $request): Response
-{
-    $user = Auth::user();
+     * Liste les inscriptions de l'utilisateur connecté (vue participant).
+     */
+    public function mesInscriptions(Request $request): Response
+    {
+        $user = Auth::user();
 
-    $query = Inscription::query()
-        ->where('user_id', $user->id)
-        ->with([
-            'evenement:id,titre,visuel,date_debut,date_fin,type_evenement_id,statut',
-            'evenement.typeEvenement:id,nom,code',
-            'evenement.lieu:id,nom',
-            'tarif:id,libelle,montant,devise',
-            'paiement',
+        $query = Inscription::query()
+            ->where('user_id', $user->id)
+            ->with([
+                'evenement:id,titre,visuel,date_debut,date_fin,type_evenement_id,statut',
+                'evenement.typeEvenement:id,nom,code',
+                'evenement.lieu:id,nom',
+                'tarif:id,nom,montant',
+                'paiement',
+            ]);
+
+        if ($request->filled('statut')) {
+            $query->where('statut', $request->statut);
+        }
+
+        $inscriptions = $query->latest()->paginate(12)->through(fn(Inscription $i) => [
+            'id'          => $i->id,
+            'qr_code'     => $i->qr_code,
+            'statut'      => $i->statut,
+            'motif_refus' => $i->motif_refus,
+            'created_at'  => optional($i->created_at)?->toIso8601String(),
+            'date_analyse' => optional($i->date_analyse)?->toIso8601String(),
+            'evenement' => $i->evenement ? [
+                'id'         => $i->evenement->id,
+                'titre'      => $i->evenement->titre,
+                'visuel_url' => $i->evenement->visuel
+                    ? asset('storage/' . $i->evenement->visuel)
+                    : null,
+                'date_debut' => optional($i->evenement->date_debut)?->toIso8601String(),
+                'statut'     => $i->evenement->statut,
+                'lieu'       => $i->evenement->lieu ? ['nom' => $i->evenement->lieu->nom] : null,
+                'type'       => $i->evenement->typeEvenement ? [
+                    'nom'  => $i->evenement->typeEvenement->nom,
+                    'code' => $i->evenement->typeEvenement->code,
+                ] : null,
+            ] : null,
+            'tarif' => $i->tarif ? [
+                'libelle' => $i->tarif->nom,
+                'montant' => (float) $i->tarif->montant,
+                'devise'  => 'FCFA',
+            ] : null,
+            'paiement' => $i->paiement ? [
+                'statut' => $i->paiement->statut,
+            ] : null,
         ]);
 
-    if ($request->filled('statut')) {
-        $query->where('statut', $request->statut);
+        $stats = [
+            'total'      => Inscription::where('user_id', $user->id)->count(),
+            'en_attente' => Inscription::where('user_id', $user->id)
+                ->whereIn('statut', ['en_attente', 'en_analyse'])->count(),
+            'acceptees'  => Inscription::where('user_id', $user->id)
+                ->whereIn('statut', ['acceptee', 'confirmee', 'present'])->count(),
+            'refusees'   => Inscription::where('user_id', $user->id)
+                ->where('statut', 'refusee')->count(),
+        ];
+
+        return Inertia::render('Inscriptions/MesInscriptions', [
+            'inscriptions' => $inscriptions,
+            'stats'        => $stats,
+            'filters'      => $request->only(['statut']),
+        ]);
     }
 
-    $inscriptions = $query->latest()->paginate(12)->through(fn (Inscription $i) => [
-        'id'          => $i->id,
-        'qr_code'     => $i->qr_code,
-        'statut'      => $i->statut,
-        'motif_refus' => $i->motif_refus,
-        'created_at'  => optional($i->created_at)?->toIso8601String(),
-        'date_analyse'=> optional($i->date_analyse)?->toIso8601String(),
-        'evenement' => $i->evenement ? [
-            'id'         => $i->evenement->id,
-            'titre'      => $i->evenement->titre,
-            'visuel_url' => $i->evenement->visuel
-                ? asset('storage/' . $i->evenement->visuel)
-                : null,
-            'date_debut' => optional($i->evenement->date_debut)?->toIso8601String(),
-            'statut'     => $i->evenement->statut,
-            'lieu'       => $i->evenement->lieu ? ['nom' => $i->evenement->lieu->nom] : null,
-            'type'       => $i->evenement->typeEvenement ? [
-                'nom'  => $i->evenement->typeEvenement->nom,
-                'code' => $i->evenement->typeEvenement->code,
-            ] : null,
-        ] : null,
-        'tarif' => $i->tarif ? [
-            'libelle' => $i->tarif->libelle,
-            'montant' => (float) $i->tarif->montant,
-            'devise'  => $i->tarif->devise ?? 'XOF',
-        ] : null,
-        'paiement' => $i->paiement ? [
-            'statut' => $i->paiement->statut,
-        ] : null,
-    ]);
+    /**
+     * Annuler une inscription (par le participant lui-même).
+     */
+    public function annuler(Inscription $inscription): RedirectResponse
+    {
+        abort_unless($inscription->user_id === Auth::id(), 403);
 
-    $stats = [
-        'total'      => Inscription::where('user_id', $user->id)->count(),
-        'en_attente' => Inscription::where('user_id', $user->id)
-            ->whereIn('statut', ['en_attente', 'en_analyse'])->count(),
-        'acceptees'  => Inscription::where('user_id', $user->id)
-            ->whereIn('statut', ['acceptee', 'confirmee', 'present'])->count(),
-        'refusees'   => Inscription::where('user_id', $user->id)
-            ->where('statut', 'refusee')->count(),
-    ];
+        if (!in_array($inscription->statut, ['en_attente', 'en_analyse', 'acceptee'])) {
+            return back()->with(
+                'error',
+                "Impossible d'annuler ce dossier (statut : {$inscription->statut})."
+            );
+        }
 
-    return Inertia::render('Inscriptions/MesInscriptions', [
-        'inscriptions' => $inscriptions,
-        'stats'        => $stats,
-        'filters'      => $request->only(['statut']),
-    ]);
-}
+        $inscription->update(['statut' => 'annulee']);
 
-/**
- * Annuler une inscription (par le participant lui-même).
- */
-public function annuler(Inscription $inscription): RedirectResponse
-{
-    abort_unless($inscription->user_id === Auth::id(), 403);
-
-    if (!in_array($inscription->statut, ['en_attente', 'en_analyse', 'acceptee'])) {
-        return back()->with('error',
-            "Impossible d'annuler ce dossier (statut : {$inscription->statut}).");
+        return back()->with('success', 'Votre dossier a été annulé.');
     }
-
-    $inscription->update(['statut' => 'annulee']);
-
-    return back()->with('success', 'Votre dossier a été annulé.');
-}
 }

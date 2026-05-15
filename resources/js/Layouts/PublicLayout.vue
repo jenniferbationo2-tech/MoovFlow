@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
+import logo from '../Components/Moov_Africa_logo-2.png'
 
 const page = usePage()
 const user = computed(() => page.props.auth?.user ?? null)
@@ -37,8 +38,8 @@ const dashboardUrl = computed(() => {
                     <!-- Logo -->
                     <Link :href="route('evenements.index')" class="flex items-center gap-2.5">
                         <div
-                            class="flex h-9 w-9 items-center justify-center rounded-xl bg-moov-orange font-display text-lg font-extrabold text-white shadow">
-                            M
+                            class="flex h-9 w-9 items-center justify-center width="600 bg-white font-display text-lg font-extrabold text-white shadow>
+                            <img src="../Components/Moov_Africa_logo-2.png" width="600px"/>
                         </div>
                         <span class="font-display text-lg font-extrabold text-white tracking-tight">
                             Moov<span class="text-moov-orange">Flow</span>
@@ -86,10 +87,7 @@ const dashboardUrl = computed(() => {
                                         class="block px-4 py-2.5 text-sm text-slate-700 hover:bg-gray-50">
                                         Tableau de bord
                                     </Link>
-                                    <Link v-if="dashboardUrl" :href="dashboardUrl"
-                                        class="block px-4 py-2.5 text-sm text-slate-700 hover:bg-gray-50">
-                                        Tableau de bord
-                                    </Link>
+                                   
 
                                     <Link href="/mes-inscriptions"
                                         class="block px-4 py-2.5 text-sm text-slate-700 hover:bg-gray-50">
@@ -100,10 +98,7 @@ const dashboardUrl = computed(() => {
                                         class="block px-4 py-2.5 text-sm text-slate-700 hover:bg-gray-50">
                                         Mon profil
                                     </Link>
-                                    <Link :href="route('profile.edit')"
-                                        class="block px-4 py-2.5 text-sm text-slate-700 hover:bg-gray-50">
-                                        👤 Mon profil
-                                    </Link>
+                                    
                                     <button @click="logout"
                                         class="block w-full px-4 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50">
                                         Déconnexion

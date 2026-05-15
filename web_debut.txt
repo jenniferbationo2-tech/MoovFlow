@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 use App\Http\Controllers\Admin\AuditController;
 use App\Http\Controllers\Admin\RoleController;
@@ -8,7 +8,6 @@ use App\Http\Controllers\AnnuaireController;
 use App\Http\Controllers\BenevoleController;
 use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CommunicationController;
-use App\Http\Controllers\CompetitionController;
 use App\Http\Controllers\CrmController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentController;
@@ -17,7 +16,6 @@ use App\Http\Controllers\EnqueteController;
 use App\Http\Controllers\EvenementController;
 use App\Http\Controllers\IntervenantController;
 use App\Http\Controllers\InscriptionController;
-use App\Http\Controllers\LogistiqueController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PaiementController;
 use App\Http\Controllers\ParticipantController;
@@ -30,101 +28,71 @@ use App\Http\Controllers\TarifController;
 use App\Http\Controllers\TacheController;
 use Illuminate\Support\Facades\Route;
 
-// ============================================
-//   ROUTES PUBLIQUES
-// ============================================
+
 
 Route::get('/', fn () => redirect()->route('evenements.index'))->name('home');
 
 Route::get('/evenements', [EvenementController::class, 'index'])->name('evenements.index');
-Route::get('/evenements/{evenement}', [EvenementController::class, 'show'])
-     ->where('evenement', '[0-9]+')
-     ->name('evenements.show');
+Route::get('/evenements/{evenement}', [EvenementController::class, 'show'])->name('evenements.show');
 
 Route::post('paiements/callback', [PaiementController::class, 'callback'])->name('paiements.callback');
 
-// ============================================
-//   ROUTES AUTHENTIFIEES
-// ============================================
 
 Route::middleware('auth')->group(function () {
 
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
-    // -- Evenements --
+    
     Route::resource('evenements', EvenementController::class)->except(['index', 'show']);
     Route::get('evenements/{evenement}/inscrire', [InscriptionController::class, 'create'])->name('evenements.inscrire');
     Route::get('evenements/{evenement}/export-paricipants', [InscriptionController::class, 'export'])->name('evenements.export-participants');
     Route::patch('evenements/{evenement}/statut', [EvenementController::class, 'updateStatut'])->name('evenements.updateStatut');
 
-    
-// Workflow validation événements
-    Route::post('/evenements/{evenement}/demander-validation', [\App\Http\Controllers\EvenementController::class, 'demanderValidation'])
-         ->name('evenements.demander-validation');
-    Route::post('/evenements/{evenement}/valider', [\App\Http\Controllers\EvenementController::class, 'valider'])
-         ->name('evenements.valider');
-    Route::post('/evenements/{evenement}/rejeter', [\App\Http\Controllers\EvenementController::class, 'rejeter'])
-         ->name('evenements.rejeter');
-    // -- Inscriptions --
+    // â”€â”€ Inscriptions â”€â”€
     Route::get('/inscriptions', [InscriptionController::class, 'index'])->name('inscriptions.index');
     Route::post('/inscriptions', [InscriptionController::class, 'store'])->name('inscriptions.store');
     Route::get('/inscriptions/{inscription}', [InscriptionController::class, 'show'])->name('inscriptions.show');
     Route::delete('/inscriptions/{inscription}', [InscriptionController::class, 'destroy'])->name('inscriptions.destroy');
 
+    // Workflow prÃ©inscription
     Route::post('inscriptions/{inscription}/analyser', [InscriptionController::class, 'analyser'])->name('inscriptions.analyser');
     Route::post('inscriptions/{inscription}/accepter', [InscriptionController::class, 'accepter'])->name('inscriptions.accepter');
     Route::post('inscriptions/{inscription}/refuser', [InscriptionController::class, 'refuser'])->name('inscriptions.refuser');
     Route::post('inscriptions/{inscription}/annuler', [InscriptionController::class, 'annuler'])->name('inscriptions.annuler');
 
+    // Mes inscriptions (participant)
     Route::get('/mes-inscriptions', [InscriptionController::class, 'mesInscriptions'])->name('mes-inscriptions.index');
 
-    // -- Annuaire --
+    // â”€â”€ Annuaire participants 
     Route::get('/annuaire', [AnnuaireController::class, 'index'])->name('annuaire.index');
     Route::get('/annuaire/{user}', [AnnuaireController::class, 'show'])->name('annuaire.show');
 
-    // ════════════════════════════════════════
-    //   VIVIER (Bénévoles, Intervenants, Jury)
-    // ════════════════════════════════════════
-    Route::get('/vivier/benevoles', [\App\Http\Controllers\VivierController::class, 'benevoles'])
-         ->name('vivier.benevoles.index');
-    Route::post('/vivier/benevoles', [\App\Http\Controllers\VivierController::class, 'storeBenevole'])
-         ->name('vivier.benevoles.store');
-    Route::delete('/vivier/benevoles/{benevole}', [\App\Http\Controllers\VivierController::class, 'destroyBenevole'])
-         ->name('vivier.benevoles.destroy');
-
-    Route::get('/vivier/intervenants', [\App\Http\Controllers\VivierController::class, 'intervenants'])
-         ->name('vivier.intervenants.index');
-    Route::post('/vivier/intervenants', [\App\Http\Controllers\VivierController::class, 'storeIntervenant'])
-         ->name('vivier.intervenants.store');
-    Route::delete('/vivier/intervenants/{intervenant}', [\App\Http\Controllers\VivierController::class, 'destroyIntervenant'])
-         ->name('vivier.intervenants.destroy');
-
-    // -- Paiements --
+    // â”€â”€ Paiements â”€â”€
     Route::post('inscriptions/{inscription}/paiement', [PaiementController::class, 'initier'])->name('paiements.initier');
     Route::get('paiements/{paiement}', [PaiementController::class, 'show'])->name('paiements.show');
 
-    // -- Participants --
+    // â”€â”€ Participants â”€â”€
     Route::resource('participants', ParticipantController::class)->only(['index', 'show']);
     Route::post('participants/import', [ParticipantController::class, 'import'])->name('participants.import');
 
-    // -- Tarifs --
+    // â”€â”€ Tarifs â”€â”€
     Route::resource('evenements.tarifs', TarifController::class)->shallow()->except(['index', 'show', 'create', 'edit']);
 
-    // -- Presences --
+    // â”€â”€ PrÃ©sences â”€â”€
     Route::post('presences/scan', [PresenceController::class, 'scan'])->name('presences.scan');
     Route::get('evenements/{evenement}/presences', [PresenceController::class, 'index'])->name('evenements.presences');
 
-    // -- Taches --
+    // â”€â”€ TÃ¢ches â”€â”€
     Route::resource('evenements.taches', TacheController::class)->shallow();
     Route::patch('taches/{tache}/statut', [TacheController::class, 'updateStatut'])->name('taches.updateStatut');
 
-    // -- Budget --
+    // â”€â”€ Budget â”€â”€
     Route::get('evenements/{evenement}/budget', [BudgetController::class, 'show'])->name('evenements.budget.show');
     Route::post('budgets/{budget}/lignes', [BudgetController::class, 'storeLigne'])->name('budgets.lignes.store');
     Route::patch('lignes-budget/{ligneBudget}', [BudgetController::class, 'updateLigne'])->name('lignes-budget.update');
     Route::delete('lignes-budget/{ligneBudget}', [BudgetController::class, 'destroyLigne'])->name('lignes-budget.destroy');
 
-    // -- Logistique (ancien) --
+    // â”€â”€ Logistique â”€â”€
     Route::prefix('evenements/{evenement}/logistique')->name('logistique.')->group(function () {
         Route::get('ressources', [RessourceController::class, 'index'])->name('ressources.index');
         Route::post('ressources', [RessourceController::class, 'store'])->name('ressources.store');
@@ -149,31 +117,7 @@ Route::middleware('auth')->group(function () {
         Route::get('dotations/tracking', [DotationController::class, 'tracking'])->name('dotations.tracking');
     });
 
-    // -- Logistique V2 (nouveau) --
-    Route::prefix('evenements/{evenement}/logistique-v2')->name('logistique-v2.')->group(function () {
-        Route::get('/', [LogistiqueController::class, 'index'])->name('index');
-        Route::post('/ressources', [LogistiqueController::class, 'storeRessource'])->name('ressources.store');
-        Route::delete('/ressources/{ressourceId}', [LogistiqueController::class, 'destroyRessource'])->name('ressources.destroy');
-        Route::post('/dotations', [LogistiqueController::class, 'storeDotation'])->name('dotations.store');
-        Route::patch('/dotations/{dotationId}/return', [LogistiqueController::class, 'returnDotation'])->name('dotations.return');
-        Route::delete('/dotations/{dotationId}', [LogistiqueController::class, 'destroyDotation'])->name('dotations.destroy');
-        Route::post('/benevoles', [LogistiqueController::class, 'storeBenevole'])->name('benevoles.store');
-        Route::delete('/benevoles/{benevole}', [LogistiqueController::class, 'destroyBenevole'])->name('benevoles.destroy');
-    });
-
-    // -- Module Competitions --
-    Route::prefix('evenements/{evenement}/competition')->name('competition.')->group(function () {
-        Route::get('/', [CompetitionController::class, 'index'])->name('index');
-        Route::post('/equipes', [CompetitionController::class, 'storeEquipe'])->name('equipes.store');
-        Route::delete('/equipes/{equipe}', [CompetitionController::class, 'destroyEquipe'])->name('equipes.destroy');
-        Route::post('/phases', [CompetitionController::class, 'storePhase'])->name('phases.store');
-        Route::delete('/phases/{phase}', [CompetitionController::class, 'destroyPhase'])->name('phases.destroy');
-        Route::post('/phases/{phase}/rencontres', [CompetitionController::class, 'storeRencontre'])->name('rencontres.store');
-        Route::patch('/rencontres/{rencontre}/score', [CompetitionController::class, 'updateScore'])->name('rencontres.score');
-        Route::delete('/rencontres/{rencontre}', [CompetitionController::class, 'destroyRencontre'])->name('rencontres.destroy');
-    });
-
-    // -- Communication --
+    // â”€â”€ Communication â”€â”€
     Route::prefix('evenements/{evenement}/communication')->name('communication.')->group(function () {
         Route::get('campaigns', [CommunicationController::class, 'campaigns'])->name('campaigns.index');
         Route::get('campaigns/create', [CommunicationController::class, 'createCampaign'])->name('campaigns.create');
@@ -193,13 +137,13 @@ Route::middleware('auth')->group(function () {
         Route::delete('documents/{document}', [DocumentController::class, 'destroy'])->name('documents.destroy');
     });
 
-    // -- Notifications --
+    // â”€â”€ Notifications â”€â”€
     Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::post('notifications/send', [NotificationController::class, 'send'])->name('notifications.send');
     Route::get('notifications/settings', [NotificationController::class, 'settings'])->name('notifications.settings');
     Route::get('communication/templates', [CommunicationController::class, 'templates'])->name('communication.templates');
 
-    // -- Admin --
+    // â”€â”€ Admin â”€â”€
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::resource('users', AdminUserController::class);
         Route::patch('users/{user}/toggle-active', [AdminUserController::class, 'toggleActive'])->name('users.toggle');
@@ -215,7 +159,7 @@ Route::middleware('auth')->group(function () {
         Route::post('settings', [SettingsController::class, 'update'])->name('settings.update');
     });
 
-    // -- CRM --
+    // â”€â”€ CRM â”€â”€
     Route::prefix('crm')->name('crm.')->group(function () {
         Route::get('contacts', [CrmController::class, 'contacts'])->name('contacts.index');
         Route::get('contacts/{user}', [CrmController::class, 'showContact'])->name('contacts.show');
@@ -230,7 +174,7 @@ Route::middleware('auth')->group(function () {
         Route::post('thank-you/{evenement}', [CrmController::class, 'sendThankYou'])->name('thank-you');
     });
 
-    // -- Rapports --
+    // â”€â”€ Rapports â”€â”€
     Route::prefix('rapports')->name('rapports.')->group(function () {
         Route::get('/', [RapportController::class, 'index'])->name('index');
         Route::get('evenements/{evenement}/participation', [RapportController::class, 'participation'])->name('participation');
@@ -241,19 +185,11 @@ Route::middleware('auth')->group(function () {
         Route::get('enquetes/{enquete}/analyse', [SatisfactionController::class, 'analyse'])->name('satisfaction.analyse');
     });
 
-    // ════════════════════════════════════════
-    //   RAPPORTS & IMPACT RSE
-    // ════════════════════════════════════════
-    Route::get('/rapports', [\App\Http\Controllers\RapportController::class, 'index'])
-         ->name('rapports.index');
-    Route::get('/rapports/export-global', [\App\Http\Controllers\RapportController::class, 'exportGlobal'])
-         ->name('rapports.export-global');
-
-    // -- Profil --
+    // â”€â”€ Profil â”€â”€
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-});
+ 
 
-require __DIR__ . '/auth.php';
+Route::middleware('auth')->group(function () {

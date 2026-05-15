@@ -175,7 +175,7 @@ onBeforeUnmount(() => {
             <div class="border-b border-white/10 px-6 py-6">
                 <Link :href="route('dashboard')" class="flex items-center gap-3">
                     <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/12 text-lg font-bold shadow-inner shadow-white/10">
-                        ◈
+                        <img src="../Components/ApplicationLogo.vue"/>
                     </div>
                     <div>
                         <p class="font-['Outfit'] text-xl font-bold tracking-wide">{{ appName }}</p>
@@ -265,7 +265,7 @@ onBeforeUnmount(() => {
                             type="button"
                             class="relative inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-[#0066B3]/30 hover:text-[#0066B3]"
                         >
-                            🔔
+                            Notifications
                             <span class="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-[#FF9800]" />
                         </button>
 
