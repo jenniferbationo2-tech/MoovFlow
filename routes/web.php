@@ -65,19 +65,57 @@ Route::middleware('auth')->group(function () {
          ->name('evenements.valider');
     Route::post('/evenements/{evenement}/rejeter', [\App\Http\Controllers\EvenementController::class, 'rejeter'])
          ->name('evenements.rejeter');
-    // -- Inscriptions --
-    Route::get('/inscriptions', [InscriptionController::class, 'index'])->name('inscriptions.index');
-    Route::post('/inscriptions', [InscriptionController::class, 'store'])->name('inscriptions.store');
-    Route::get('/inscriptions/{inscription}', [InscriptionController::class, 'show'])->name('inscriptions.show');
-    Route::delete('/inscriptions/{inscription}', [InscriptionController::class, 'destroy'])->name('inscriptions.destroy');
+   // ════════════════════════════════════════
+    //   INSCRIPTIONS - Workflow 2 niveaux
+    // ════════════════════════════════════════
 
-    Route::post('inscriptions/{inscription}/analyser', [InscriptionController::class, 'analyser'])->name('inscriptions.analyser');
-    Route::post('inscriptions/{inscription}/accepter', [InscriptionController::class, 'accepter'])->name('inscriptions.accepter');
-    Route::post('inscriptions/{inscription}/refuser', [InscriptionController::class, 'refuser'])->name('inscriptions.refuser');
-    Route::post('inscriptions/{inscription}/annuler', [InscriptionController::class, 'annuler'])->name('inscriptions.annuler');
+    // Vue staff
+    Route::get('/inscriptions', [\App\Http\Controllers\InscriptionController::class, 'index'])
+         ->name('inscriptions.index');
 
-    Route::get('/mes-inscriptions', [InscriptionController::class, 'mesInscriptions'])->name('mes-inscriptions.index');
+    // Vue participant : ses inscriptions
+    Route::get('/mes-inscriptions', [\App\Http\Controllers\InscriptionController::class, 'mesInscriptions'])
+         ->name('mes-inscriptions.index');
 
+    // Détail
+    Route::get('/inscriptions/{inscription}', [\App\Http\Controllers\InscriptionController::class, 'show'])
+         ->name('inscriptions.show')
+         ->where('inscription', '[0-9]+');
+
+    // NIVEAU 1 : Pré-inscription
+    Route::get('/evenements/{evenement}/preinscrire', [\App\Http\Controllers\InscriptionController::class, 'create'])
+         ->name('inscriptions.create')
+         ->where('evenement', '[0-9]+');
+    Route::post('/inscriptions', [\App\Http\Controllers\InscriptionController::class, 'store'])
+         ->name('inscriptions.store');
+
+    // NIVEAU 2 : Dossier complet
+    Route::get('/inscriptions/{inscription}/dossier-complet', [\App\Http\Controllers\InscriptionController::class, 'dossierComplet'])
+         ->name('inscriptions.dossier-complet')
+         ->where('inscription', '[0-9]+');
+    Route::post('/inscriptions/{inscription}/dossier-complet', [\App\Http\Controllers\InscriptionController::class, 'soumettreDossier'])
+         ->name('inscriptions.soumettre-dossier')
+         ->where('inscription', '[0-9]+');
+
+    // ACTIONS STAFF
+    Route::post('/inscriptions/{inscription}/preselectionner', [\App\Http\Controllers\InscriptionController::class, 'preselectionner'])
+         ->name('inscriptions.preselectionner')
+         ->where('inscription', '[0-9]+');
+    Route::post('/inscriptions/{inscription}/recommander', [\App\Http\Controllers\InscriptionController::class, 'recommander'])
+         ->name('inscriptions.recommander')
+         ->where('inscription', '[0-9]+');
+    Route::post('/inscriptions/{inscription}/valider', [\App\Http\Controllers\InscriptionController::class, 'valider'])
+         ->name('inscriptions.valider')
+         ->where('inscription', '[0-9]+');
+    Route::post('/inscriptions/{inscription}/refuser', [\App\Http\Controllers\InscriptionController::class, 'refuser'])
+         ->name('inscriptions.refuser')
+         ->where('inscription', '[0-9]+');
+
+    // ACTION PARTICIPANT : Annuler
+    Route::post('/inscriptions/{inscription}/annuler', [\App\Http\Controllers\InscriptionController::class, 'annuler'])
+         ->name('inscriptions.annuler')
+         ->where('inscription', '[0-9]+');
+         
     // -- Annuaire --
     Route::get('/annuaire', [AnnuaireController::class, 'index'])->name('annuaire.index');
     Route::get('/annuaire/{user}', [AnnuaireController::class, 'show'])->name('annuaire.show');

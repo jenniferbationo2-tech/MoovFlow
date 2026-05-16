@@ -2,594 +2,538 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\DossierInscription;
 use App\Models\Evenement;
 use App\Models\Inscription;
-use App\Models\Tarif;
-use App\Models\User;
-use App\Services\PaiementService;
-use App\Services\QrCodeService;
+use App\Models\EmailLog;
+use App\Services\InscriptionEmailService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
-use Inertia\Response;
-
+use Inertia\Response as InertiaResponse;
 
 class InscriptionController extends Controller
 {
     public function __construct(
-        private readonly QrCodeService $qrCodeService,
-        private readonly PaiementService $paiementService,
+        private readonly InscriptionEmailService $emailService,
     ) {}
 
-    /**
-     * Liste globale des dossiers d'inscription (pour staff).
-     */
-    public function index(Request $request): Response
-    {
-        Gate::authorize('viewAny', Inscription::class);
+    // ════════════════════════════════════════
+    //   VUE STAFF : LISTE DES INSCRIPTIONS
+    // ════════════════════════════════════════
 
+    public function index(Request $request): InertiaResponse
+    {
         $user = Auth::user();
+        abort_unless(
+            $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']),
+            403,
+            'Accès réservé au staff.'
+        );
 
         $query = Inscription::query()
             ->with([
                 'user:id,nom,prenom,email,telephone',
-                'evenement:id,titre,type_evenement_id,created_by',
+                'evenement:id,titre,date_debut,type_evenement_id,created_by',
                 'evenement.typeEvenement:id,nom,code',
-                'tarif:id,nom,montant',
-                'dossier',
-                'analysePar:id,nom,prenom',
             ]);
 
+        // Si organisateur (pas admin/responsable) : voir seulement SES événements
         if ($user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp'])) {
-            $query->whereHas('evenement', fn($q) => $q->where('created_by', $user->id));
+            $query->whereHas('evenement', fn ($q) => $q->where('created_by', $user->id));
         }
 
+        // Filtre statut
         if ($request->filled('statut')) {
             $query->where('statut', $request->statut);
         }
+
+        // Filtre événement
         if ($request->filled('evenement_id')) {
             $query->where('evenement_id', $request->evenement_id);
         }
+
+        // Filtre niveau (niveau_1 = pré-inscriptions, niveau_2 = dossiers)
+        if ($request->filled('niveau')) {
+            $query->where('niveau_inscription', $request->niveau);
+        }
+
+        // Recherche texte
         if ($request->filled('search')) {
             $q = $request->search;
-            $query->where(function ($sub) use ($q) {
-                $sub->whereHas('user', fn($u) => $u->where('nom', 'like', "%$q%")
-                    ->orWhere('prenom', 'like', "%$q%")
-                    ->orWhere('email', 'like', "%$q%"))
-                    ->orWhere('qr_code', 'like', "%$q%");
+            $query->where(function ($s) use ($q) {
+                $s->whereHas('user', function ($u) use ($q) {
+                    $u->where('nom', 'like', "%$q%")
+                      ->orWhere('prenom', 'like', "%$q%")
+                      ->orWhere('email', 'like', "%$q%");
+                });
             });
         }
 
-        $inscriptions = $query->latest()->paginate(20)->through(fn(Inscription $i) => [
-            'id'          => $i->id,
-            'qr_code'     => $i->qr_code,
-            'statut'      => $i->statut,
-            'motif_refus' => $i->motif_refus,
-            'created_at'  => optional($i->created_at)?->toIso8601String(),
-            'date_analyse' => optional($i->date_analyse)?->toIso8601String(),
-            'user' => $i->user ? [
-                'id'        => $i->user->id,
-                'nom'       => $i->user->nom,
-                'prenom'    => $i->user->prenom,
-                'email'     => $i->user->email,
-                'telephone' => $i->user->telephone,
-            ] : null,
-            'evenement' => $i->evenement ? [
-                'id'    => $i->evenement->id,
-                'titre' => $i->evenement->titre,
-                'type'  => $i->evenement->typeEvenement ? [
-                    'nom'  => $i->evenement->typeEvenement->nom,
-                    'code' => $i->evenement->typeEvenement->code,
-                ] : null,
-            ] : null,
-            'tarif' => $i->tarif ? [
-                'libelle' => $i->tarif->nom,
-                'montant' => (float) $i->tarif->montant,
-                'devise'  => 'FCFA',
-            ] : null,
-            'dossier' => $i->dossier?->toArray(),
-            'analyse_par' => $i->analysePar ? [
-                'nom'    => $i->analysePar->nom,
-                'prenom' => $i->analysePar->prenom,
-            ] : null,
-        ]);
+        $inscriptions = $query->latest()->paginate(20);
 
-        $statsQuery = Inscription::query();
-        if ($user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp'])) {
-            $statsQuery->whereHas('evenement', fn($q) => $q->where('created_by', $user->id));
-        }
+        // KPIs
+        $kpis = $this->calculerKpis($user);
 
-        $stats = [
-            'total'      => (clone $statsQuery)->count(),
-            'en_attente' => (clone $statsQuery)->where('statut', 'en_attente')->count(),
-            'en_analyse' => (clone $statsQuery)->where('statut', 'en_analyse')->count(),
-            'acceptee'   => (clone $statsQuery)->where('statut', 'acceptee')->count(),
-            'confirmee'  => (clone $statsQuery)->where('statut', 'confirmee')->count(),
-            'refusee'    => (clone $statsQuery)->where('statut', 'refusee')->count(),
-        ];
-
+        // Liste des événements pour le filtre
         $evenements = Evenement::query()
-            ->select('id', 'titre')
             ->when(
                 $user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp']),
-                fn($q) => $q->where('created_by', $user->id)
+                fn ($q) => $q->where('created_by', $user->id)
             )
             ->orderBy('titre')
-            ->get();
+            ->get(['id', 'titre']);
 
         return Inertia::render('Inscriptions/Index', [
             'inscriptions' => $inscriptions,
-            'stats'        => $stats,
+            'kpis'         => $kpis,
             'evenements'   => $evenements,
-            'filters'      => $request->only(['statut', 'evenement_id', 'search']),
-        ]);
-    }
-
-    /**
-     * Affiche le formulaire de préinscription adapté au type d'événement.
-     */
-    public function create(Evenement $evenement): RedirectResponse|Response
-    {
-        if (!Auth::check()) {
-            return redirect()->route('login')
-                ->with('info', 'Connectez-vous pour vous inscrire à cet événement.');
-        }
-
-        $evenement->load(['typeEvenement', 'lieu', 'tarifs']);
-
-        if ($evenement->typeEvenement?->code === 'SALON') {
-            return redirect()->route('evenements.show', $evenement)
-                ->with('info', 'Cet événement est organisé par un tiers. Visitez le stand Moov sur place.');
-        }
-
-        if ($evenement->statut !== 'publie') {
-            return redirect()->route('evenements.show', $evenement)
-                ->with('error', 'Cet événement n\'est pas ouvert aux inscriptions.');
-        }
-
-        $dejaInscrit = Inscription::where('evenement_id', $evenement->id)
-            ->where('user_id', Auth::id())
-            ->whereNotIn('statut', ['refusee', 'annulee'])
-            ->exists();
-
-        if ($dejaInscrit) {
-            return redirect()->route('evenements.show', $evenement)
-                ->with('error', 'Vous avez déjà soumis un dossier pour cet événement.');
-        }
-
-        return Inertia::render('Inscriptions/Create', [
-            'evenement' => [
-                'id'           => $evenement->id,
-                'titre'        => $evenement->titre,
-                'description'  => $evenement->description,
-                'date_debut'   => optional($evenement->date_debut)?->toIso8601String(),
-                'date_fin'     => optional($evenement->date_fin)?->toIso8601String(),
-                'lieu'         => $evenement->lieu ? ['nom' => $evenement->lieu->nom] : null,
-                'reglement_pdf_url' => $evenement->reglement_pdf
-                    ? asset('storage/' . $evenement->reglement_pdf)
-                    : null,
-                'type_evenement' => $evenement->typeEvenement ? [
-                    'id'   => $evenement->typeEvenement->id,
-                    'nom'  => $evenement->typeEvenement->nom,
-                    'code' => $evenement->typeEvenement->code,
-                ] : null,
-                'tarifs' => $evenement->tarifs->map(fn($t) => [
-                    'id'      => $t->id,
-                    'libelle' => $t->nom,
-                    'montant' => (float) $t->montant,
-                    'devise'  => 'FCFA',
-                ])->all(),
+            'filters'      => $request->only(['statut', 'evenement_id', 'niveau', 'search']),
+            'userRole'     => [
+                'estResponsable'  => $user->hasAnyRole(['admin', 'responsable_dcirp']),
+                'estOrganisateur' => $user->hasRole('organisateur'),
             ],
         ]);
     }
 
-
-    public function show(Inscription $inscription): Response
+    private function calculerKpis($user): array
     {
-        Gate::authorize('view', $inscription);
+        $query = Inscription::query();
 
-        $inscription->load([
-            'user',
-            'evenement.typeEvenement',
-            'evenement.lieu',
-            'tarif',
-            'dossier',
-            'analysePar',
-            'paiement',
-        ]);
+        if ($user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp'])) {
+            $query->whereHas('evenement', fn ($q) => $q->where('created_by', $user->id));
+        }
 
-        $user = Auth::user();
-        $estStaff = $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']);
-
-        $payload = [
-            'id'          => $inscription->id,
-            'qr_code'     => $inscription->qr_code,
-            'statut'      => $inscription->statut,
-            'motif_refus' => $inscription->motif_refus,
-            'created_at'  => optional($inscription->created_at)?->toIso8601String(),
-            'date_analyse' => optional($inscription->date_analyse)?->toIso8601String(),
-            'user' => $inscription->user ? [
-                'id'        => $inscription->user->id,
-                'nom'       => $inscription->user->nom,
-                'prenom'    => $inscription->user->prenom,
-                'email'     => $inscription->user->email,
-                'telephone' => $inscription->user->telephone,
-            ] : null,
-            'evenement' => $inscription->evenement ? [
-                'id'         => $inscription->evenement->id,
-                'titre'      => $inscription->evenement->titre,
-                'date_debut' => optional($inscription->evenement->date_debut)?->toIso8601String(),
-                'lieu'       => $inscription->evenement->lieu ? [
-                    'nom' => $inscription->evenement->lieu->nom,
-                ] : null,
-                'type'       => $inscription->evenement->typeEvenement ? [
-                    'nom'  => $inscription->evenement->typeEvenement->nom,
-                    'code' => $inscription->evenement->typeEvenement->code,
-                ] : null,
-            ] : null,
-            'tarif' => $inscription->tarif ? [
-                'libelle' => $inscription->tarif->libelle,
-                'montant' => (float) $inscription->tarif->montant,
-                'devise'  => $inscription->tarif->devise ?? 'XOF',
-            ] : null,
-            'dossier' => $inscription->dossier ? array_merge(
-                $inscription->dossier->toArray(),
-                [
-                    'fichier_joint_url' => $inscription->dossier->fichier_joint
-                        ? asset('storage/' . $inscription->dossier->fichier_joint)
-                        : null,
-                ]
-            ) : null,
-            'analyse_par' => $inscription->analysePar ? [
-                'nom'    => $inscription->analysePar->nom,
-                'prenom' => $inscription->analysePar->prenom,
-            ] : null,
-            'paiement' => $inscription->paiement,
+        return [
+            'total'           => (clone $query)->count(),
+            'preinscrits'     => (clone $query)->where('statut', Inscription::STATUT_PREINSCRIT)->count(),
+            'a_analyser'      => (clone $query)->whereIn('statut', [
+                Inscription::STATUT_DOSSIER_SOUMIS,
+                Inscription::STATUT_EN_ANALYSE,
+            ])->count(),
+            'recommandees'    => (clone $query)->where('statut', Inscription::STATUT_RECOMMANDEE)->count(),
+            'acceptees'       => (clone $query)->whereIn('statut', [
+                Inscription::STATUT_ACCEPTEE,
+                Inscription::STATUT_CONFIRMEE,
+            ])->count(),
+            'refusees'        => (clone $query)->where('statut', Inscription::STATUT_REFUSEE)->count(),
         ];
-
-        // Vue staff vs participant
-        return Inertia::render(
-            $estStaff ? 'Inscriptions/Detail' : 'Inscriptions/Show',
-            ['inscription' => $payload]
-        );
     }
 
-    /**
-     * Crée une nouvelle préinscription.
-     */
+    // ════════════════════════════════════════
+    //   NIVEAU 1 : PRÉ-INSCRIPTION
+    // ════════════════════════════════════════
+
+    public function create(Evenement $evenement): InertiaResponse|RedirectResponse
+    {
+        if (!Auth::check()) {
+            return redirect()->route('login')
+                ->with('info', 'Connectez-vous pour vous pré-inscrire.');
+        }
+
+        $evenement->load(['typeEvenement', 'lieu']);
+
+        // Bloquer SALON
+        if ($evenement->typeEvenement?->code === 'SALON') {
+            return redirect()->route('evenements.show', $evenement)
+                ->with('info', 'Le Salon est une vitrine. Aucune pré-inscription nécessaire.');
+        }
+
+        // Vérifier que l'événement est publié
+        if (!in_array($evenement->statut, ['publie', 'en_cours'])) {
+            return redirect()->route('evenements.show', $evenement)
+                ->with('error', 'Cet événement n\'est pas ouvert aux inscriptions.');
+        }
+
+        // Vérifier que l'utilisateur ne s'est pas déjà inscrit
+        $existante = Inscription::where('evenement_id', $evenement->id)
+            ->where('user_id', Auth::id())
+            ->whereNotIn('statut', [Inscription::STATUT_REFUSEE, Inscription::STATUT_ANNULEE])
+            ->first();
+
+        if ($existante) {
+            return redirect()->route('inscriptions.show', $existante)
+                ->with('info', 'Vous êtes déjà inscrit à cet événement.');
+        }
+
+        return Inertia::render('Inscriptions/Preinscription', [
+            'evenement' => $evenement,
+        ]);
+    }
+
     public function store(Request $request): RedirectResponse
     {
-        Gate::authorize('create', Inscription::class);
-
         $validated = $request->validate([
-            'evenement_id'           => ['required', 'exists:evenements,id'],
-            'tarif_id'               => ['nullable', 'exists:tarifs,id'],
-            'reglement_accepte'      => ['nullable', 'boolean'],
-            'mode'                   => ['nullable', Rule::in(['cash', 'moov_money', 'gratuit'])],
-            // Champs du dossier
-            'organisation'           => ['nullable', 'string', 'max:255'],
-            'fonction'               => ['nullable', 'string', 'max:255'],
-            'motivation'             => ['nullable', 'string', 'max:1000'],
-            'fichier_joint'          => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:5120'],
-            // Bara Mousso
-            'nom_association'        => ['nullable', 'string', 'max:255'],
-            'description_projet'     => ['nullable', 'string'],
-            'nb_membres_association' => ['nullable', 'integer', 'min:1'],
-            'budget_projet'          => ['nullable', 'numeric', 'min:0'],
-            // Sport
-            'nom_equipe'             => ['nullable', 'string', 'max:255'],
-            'nb_joueurs'             => ['nullable', 'integer', 'min:1'],
-            'categorie_equipe'       => ['nullable', 'string', 'max:50'],
-            'responsable_equipe'     => ['nullable', 'string', 'max:255'],
-            // Hackathon
-            'competences_techniques' => ['nullable', 'string', 'max:255'],
-            'stack_technologique'    => ['nullable', 'string', 'max:255'],
-            'nom_equipe_hack'        => ['nullable', 'string', 'max:255'],
-            'nb_membres_equipe'      => ['nullable', 'integer', 'min:1'],
-            // Formation
-            'niveau_formation'       => ['nullable', Rule::in(['debutant', 'intermediaire', 'avance'])],
-            'objectifs_apprentissage' => ['nullable', 'string'],
-            // Salon
-            'secteur_activite'       => ['nullable', 'string', 'max:255'],
-            'type_visite_salon'      => ['nullable', Rule::in(['visiteur', 'partenaire_potentiel', 'client_potentiel'])],
-            'interets_b2b'           => ['nullable', 'string'],
-            // Challenge
-            'titre_idee'             => ['nullable', 'string', 'max:255'],
-            'secteur_idee'           => ['nullable', 'string', 'max:255'],
+            'evenement_id'       => ['required', 'exists:evenements,id'],
+            'motivation_courte'  => ['required', 'string', 'min:20', 'max:500'],
+            'reglement_accepte'  => ['accepted'],
         ]);
 
-        $evenement = Evenement::query()
-            ->with(['tarifs', 'lieu.salles', 'typeEvenement'])
-            ->findOrFail($validated['evenement_id']);
+        $evenement = Evenement::with('typeEvenement')->findOrFail($validated['evenement_id']);
 
-        // Vérification du règlement
-        if ($evenement->reglement_pdf && !($validated['reglement_accepte'] ?? false)) {
-            return back()->withErrors([
-                'reglement_accepte' => 'Vous devez accepter le règlement de l\'événement pour soumettre votre dossier.',
-            ])->withInput();
-        }
+        DB::beginTransaction();
 
-        $tarif = $validated['tarif_id'] ? Tarif::findOrFail($validated['tarif_id']) : null;
-
-        if ($tarif && (int) $tarif->evenement_id !== (int) $evenement->id) {
-            return back()->withErrors([
-                'tarif_id' => 'Le tarif sélectionné ne correspond pas à cet événement.',
-            ])->withInput();
-        }
-
-        $participant = Auth::user();
-
-        $duplicate = Inscription::query()
-            ->where('user_id', $participant->id)
-            ->where('evenement_id', $evenement->id)
-            ->whereNotIn('statut', ['refusee', 'annulee'])
-            ->exists();
-
-        if ($duplicate) {
-            return back()->withErrors([
-                'evenement_id' => 'Vous avez déjà un dossier en cours pour cet événement.',
-            ])->withInput();
-        }
-
-        $inscription = null;
-
-        DB::transaction(function () use (
-            &$inscription,
-            $participant,
-            $evenement,
-            $tarif,
-            $validated,
-            $request
-        ): void {
-
-            $inscription = Inscription::query()->create([
-                'user_id'      => $participant->id,
-                'evenement_id' => $evenement->id,
-                'tarif_id'     => $tarif?->id,
-                'statut'       => 'en_attente',
-                'qr_code'      => Str::upper((string) Str::ulid()),
+        try {
+            $inscription = Inscription::create([
+                'evenement_id'         => $evenement->id,
+                'user_id'              => Auth::id(),
+                'motivation'           => $validated['motivation_courte'],
+                'statut'               => Inscription::STATUT_PREINSCRIT,
+                'niveau_inscription'   => Inscription::NIVEAU_1,
+                'qr_code'              => 'MOOV-' . strtoupper(Str::random(8)),
             ]);
 
-            $dossierData = [
-                'inscription_id' => $inscription->id,
-                'organisation'   => $request->input('organisation'),
-                'fonction'       => $request->input('fonction'),
-                'motivation'     => $request->input('motivation'),
-            ];
+            $inscription->load(['user', 'evenement.typeEvenement', 'evenement.lieu']);
 
-            if ($request->hasFile('fichier_joint')) {
-                $dossierData['fichier_joint'] = $request->file('fichier_joint')
-                    ->store('dossiers', 'public');
+            // Si type CONF/FORMATION : pas de présélection, validation directe
+            if (!$inscription->necessitePreselection()) {
+                $this->emailService->envoyer($inscription, EmailLog::TYPE_PREINSCRIPTION_RECUE);
+            } else {
+                $this->emailService->envoyer($inscription, EmailLog::TYPE_PREINSCRIPTION_RECUE);
             }
 
-            $typeCode = $evenement->typeEvenement?->code;
+            DB::commit();
 
-            switch ($typeCode) {
-                case 'BARA_MOUSSO':
-                    $dossierData['nom_association']        = $request->input('nom_association');
-                    $dossierData['description_projet']     = $request->input('description_projet');
-                    $dossierData['nb_membres_association'] = $request->input('nb_membres_association');
-                    $dossierData['budget_projet']          = $request->input('budget_projet');
-                    break;
-                case 'HACK':
-                    $dossierData['competences_techniques'] = $request->input('competences_techniques');
-                    $dossierData['stack_technologique']    = $request->input('stack_technologique');
-                    $dossierData['nom_equipe_hack']        = $request->input('nom_equipe_hack');
-                    $dossierData['nb_membres_equipe']      = $request->input('nb_membres_equipe');
-                    break;
-                case 'FORMATION':
-                    $dossierData['niveau_formation']        = $request->input('niveau_formation');
-                    $dossierData['objectifs_apprentissage'] = $request->input('objectifs_apprentissage');
-                    break;
-                case 'SPORT':
-                    $dossierData['nom_equipe']         = $request->input('nom_equipe');
-                    $dossierData['nb_joueurs']         = $request->input('nb_joueurs');
-                    $dossierData['categorie_equipe']   = $request->input('categorie_equipe');
-                    $dossierData['responsable_equipe'] = $request->input('responsable_equipe');
-                    break;
-                case 'SALON':
-                    $dossierData['secteur_activite']  = $request->input('secteur_activite');
-                    $dossierData['type_visite_salon'] = $request->input('type_visite_salon');
-                    $dossierData['interets_b2b']      = $request->input('interets_b2b');
-                    break;
-                case 'CHALLENGE':
-                    $dossierData['titre_idee']   = $request->input('titre_idee');
-                    $dossierData['secteur_idee'] = $request->input('secteur_idee');
-                    break;
-            }
+            return redirect()->route('inscriptions.show', $inscription)
+                ->with('success', 'Votre pré-inscription a été soumise avec succès ! Un email de confirmation vous a été envoyé.');
 
-            DossierInscription::create($dossierData);
-
-            $this->qrCodeService->generate($inscription);
-
-            if ($tarif && (float) $tarif->montant > 0) {
-                $this->paiementService->initierPaiement(
-                    $inscription,
-                    $validated['mode'] ?? 'moov_money'
-                );
-            }
-        });
-
-        return redirect()
-            ->route('inscriptions.show', $inscription)
-            ->with('success', 'Dossier soumis avec succès. Vous serez notifié après analyse par l\'organisateur.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Erreur lors de la pré-inscription : ' . $e->getMessage());
+        }
     }
 
-    // ════════════════════════════════════════════════
-    //   WORKFLOW PRÉINSCRIPTION
-    // ════════════════════════════════════════════════
+    // ════════════════════════════════════════
+    //   NIVEAU 2 : DOSSIER COMPLET
+    // ════════════════════════════════════════
 
-    public function analyser(Inscription $inscription): RedirectResponse
+    public function dossierComplet(Request $request, Inscription $inscription): InertiaResponse|RedirectResponse
     {
-        Gate::authorize('update', $inscription);
+        // Vérifier le token sécurisé OU être le propriétaire
+        $token = $request->query('token');
+        $isOwner = Auth::check() && $inscription->user_id === Auth::id();
+        $tokenValide = $token && $inscription->token_acces === $token && $inscription->tokenEstValide();
 
-        if ($inscription->statut !== 'en_attente') {
-            return back()->with(
-                'error',
-                "Ce dossier ne peut pas être analysé (statut : {$inscription->statut})."
-            );
+        abort_unless($isOwner || $tokenValide, 403, 'Accès non autorisé à ce dossier.');
+
+        // Vérifier le statut
+        if (!in_array($inscription->statut, [
+            Inscription::STATUT_PRESELECTIONNE,
+            Inscription::STATUT_DOSSIER_SOUMIS,
+        ])) {
+            return redirect()->route('inscriptions.show', $inscription)
+                ->with('info', 'Ce dossier ne peut plus être modifié.');
         }
 
-        $inscription->update([
-            'statut'       => 'en_analyse',
-            'date_analyse' => now(),
-            'analyse_par'  => Auth::id(),
+        $inscription->load(['evenement.typeEvenement', 'evenement.lieu', 'user']);
+
+        return Inertia::render('Inscriptions/DossierComplet', [
+            'inscription' => $inscription,
+            'evenement'   => $inscription->evenement,
+            'typeCode'    => $inscription->evenement->typeEvenement?->code,
+        ]);
+    }
+
+    public function soumettreDossier(Request $request, Inscription $inscription): RedirectResponse
+    {
+        // Mêmes contrôles que dossierComplet
+        $token = $request->input('token');
+        $isOwner = Auth::check() && $inscription->user_id === Auth::id();
+        $tokenValide = $token && $inscription->token_acces === $token && $inscription->tokenEstValide();
+
+        abort_unless($isOwner || $tokenValide, 403);
+
+        $typeCode = $inscription->evenement->typeEvenement?->code;
+
+        // Validation selon le type
+        $rules = $this->reglesValidationDossier($typeCode);
+        $validated = $request->validate($rules);
+
+        DB::beginTransaction();
+
+        try {
+            $inscription->update(array_merge($validated, [
+                'statut' => Inscription::STATUT_DOSSIER_SOUMIS,
+                'token_acces' => null, // Invalider le token
+                'token_expire_at' => null,
+            ]));
+
+            $this->emailService->envoyer($inscription, EmailLog::TYPE_DOSSIER_RECU);
+
+            DB::commit();
+
+            return redirect()->route('inscriptions.show', $inscription)
+                ->with('success', 'Votre dossier complet a été soumis ! Vous recevrez une réponse sous peu.');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Erreur : ' . $e->getMessage());
+        }
+    }
+
+    // ════════════════════════════════════════
+    //   ACTIONS STAFF : PRÉSÉLECTION
+    // ════════════════════════════════════════
+
+    public function preselectionner(Inscription $inscription): RedirectResponse
+    {
+        $user = Auth::user();
+        abort_unless($user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']), 403);
+        abort_unless($inscription->peutEtrePreselectionne(), 422, 'Cette inscription ne peut pas être présélectionnée.');
+
+        DB::beginTransaction();
+
+        try {
+            $token = $inscription->genererTokenAcces(7);
+
+            $inscription->update([
+                'statut'         => Inscription::STATUT_PRESELECTIONNE,
+                'presele_par_id' => $user->id,
+                'presele_le'     => now(),
+                'niveau_inscription' => Inscription::NIVEAU_2,
+            ]);
+
+            // Lien sécurisé vers le dossier complet
+            $lien = route('inscriptions.dossier-complet', $inscription) . '?token=' . $token;
+
+            $this->emailService->envoyer($inscription, EmailLog::TYPE_PRESELECTIONNE, [
+                'lien_dossier' => $lien,
+            ]);
+
+            DB::commit();
+
+            return back()->with('success', 'Candidat présélectionné ! Un email avec le lien vers le dossier complet a été envoyé.');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Erreur : ' . $e->getMessage());
+        }
+    }
+
+    // ════════════════════════════════════════
+    //   ACTIONS STAFF : RECOMMANDATION (Organisateur)
+    // ════════════════════════════════════════
+
+    public function recommander(Request $request, Inscription $inscription): RedirectResponse
+    {
+        $user = Auth::user();
+        abort_unless($user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']), 403);
+        abort_unless($inscription->peutEtreRecommandee(), 422, 'Cette inscription ne peut pas être recommandée.');
+
+        $request->validate([
+            'note_organisateur' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        return back()->with('success', 'Dossier marqué en cours d\'analyse.');
-    }
-
-    public function accepter(Inscription $inscription): RedirectResponse
-    {
-        Gate::authorize('update', $inscription);
-
-        if (!in_array($inscription->statut, ['en_attente', 'en_analyse'])) {
-            return back()->with(
-                'error',
-                "Ce dossier ne peut pas être accepté (statut : {$inscription->statut})."
-            );
-        }
-
-        $tarif = $inscription->tarif;
-        $estGratuit = !$tarif || (float) $tarif->montant <= 0;
-
         $inscription->update([
-            'statut'       => $estGratuit ? 'confirmee' : 'acceptee',
-            'date_analyse' => now(),
-            'analyse_par'  => Auth::id(),
+            'statut'            => Inscription::STATUT_RECOMMANDEE,
+            'recommande_par_id' => $user->id,
+            'recommande_le'     => now(),
+            'note_organisateur' => $request->note_organisateur,
         ]);
 
-        if ($estGratuit) {
-            $this->qrCodeService->generate($inscription);
-        }
-
-        return back()->with(
-            'success',
-            $estGratuit
-                ? 'Dossier accepté et confirmé. QR code généré.'
-                : 'Dossier accepté. En attente de paiement.'
-        );
+        return back()->with('success', 'Candidature recommandée. En attente de validation finale par le responsable dCIRP.');
     }
+
+    // ════════════════════════════════════════
+    //   ACTIONS STAFF : VALIDATION FINALE (Responsable)
+    // ════════════════════════════════════════
+
+    public function valider(Inscription $inscription): RedirectResponse
+    {
+        $user = Auth::user();
+        abort_unless($user->hasAnyRole(['admin', 'responsable_dcirp']), 403, 'Seul le responsable dCIRP peut valider.');
+        abort_unless($inscription->peutEtreValidee(), 422, 'Cette inscription ne peut pas être validée.');
+
+        DB::beginTransaction();
+
+        try {
+            // S'assurer d'un QR code unique
+            if (!$inscription->qr_code) {
+                $inscription->qr_code = 'MOOV-' . strtoupper(Str::random(8));
+            }
+
+            $inscription->update([
+                'statut'        => Inscription::STATUT_CONFIRMEE,
+                'valide_par_id' => $user->id,
+                'valide_le'     => now(),
+            ]);
+
+            $this->emailService->envoyer($inscription, EmailLog::TYPE_ACCEPTE);
+
+            DB::commit();
+
+            return back()->with('success', 'Candidature acceptée ! Email + QR code envoyés au candidat.');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Erreur : ' . $e->getMessage());
+        }
+    }
+
+    // ════════════════════════════════════════
+    //   ACTIONS STAFF : REFUS
+    // ════════════════════════════════════════
 
     public function refuser(Request $request, Inscription $inscription): RedirectResponse
     {
-        Gate::authorize('update', $inscription);
+        $user = Auth::user();
+        abort_unless($user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']), 403);
+        abort_unless($inscription->peutEtreRefusee(), 422, 'Cette inscription ne peut pas être refusée.');
 
         $request->validate([
-            'motif_refus' => ['required', 'string', 'min:10', 'max:500'],
-        ], [
-            'motif_refus.required' => 'Le motif de refus est obligatoire.',
-            'motif_refus.min'      => 'Le motif doit comporter au moins 10 caractères.',
+            'motif_refus' => ['required', 'string', 'min:10', 'max:1000'],
         ]);
 
-        if (!in_array($inscription->statut, ['en_attente', 'en_analyse'])) {
-            return back()->with(
-                'error',
-                "Ce dossier ne peut pas être refusé (statut : {$inscription->statut})."
-            );
+        DB::beginTransaction();
+
+        try {
+            $inscription->update([
+                'statut'      => Inscription::STATUT_REFUSEE,
+                'motif_refus' => $request->motif_refus,
+            ]);
+
+            $this->emailService->envoyer($inscription, EmailLog::TYPE_REFUSE, [
+                'motif' => $request->motif_refus,
+            ]);
+
+            DB::commit();
+
+            return back()->with('success', 'Candidature refusée. Le candidat a été notifié.');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Erreur : ' . $e->getMessage());
         }
-
-        $inscription->update([
-            'statut'       => 'refusee',
-            'motif_refus'  => $request->motif_refus,
-            'date_analyse' => now(),
-            'analyse_par'  => Auth::id(),
-        ]);
-
-        return back()->with('success', 'Dossier refusé. Le participant sera notifié.');
     }
 
-    /**
-     * Liste les inscriptions de l'utilisateur connecté (vue participant).
-     */
-    public function mesInscriptions(Request $request): Response
+    // ════════════════════════════════════════
+    //   VOIR UNE INSCRIPTION
+    // ════════════════════════════════════════
+
+    public function show(Inscription $inscription): InertiaResponse
     {
         $user = Auth::user();
 
-        $query = Inscription::query()
-            ->where('user_id', $user->id)
-            ->with([
-                'evenement:id,titre,visuel,date_debut,date_fin,type_evenement_id,statut',
-                'evenement.typeEvenement:id,nom,code',
-                'evenement.lieu:id,nom',
-                'tarif:id,nom,montant',
-                'paiement',
+        // Sécurité : seul le proprio ou staff peut voir
+        $isOwner = $user && $inscription->user_id === $user->id;
+        $isStaff = $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']);
+
+        abort_unless($isOwner || $isStaff, 403);
+
+        $inscription->load([
+            'user:id,nom,prenom,email,telephone',
+            'evenement.typeEvenement',
+            'evenement.lieu',
+            'preseleParUser:id,nom,prenom',
+            'recommandeParUser:id,nom,prenom',
+            'valideParUser:id,nom,prenom',
+            'emailLogs',
+        ]);
+
+        // Le staff voit la version Detail (avec workflow)
+        if ($isStaff && !$isOwner) {
+            return Inertia::render('Inscriptions/Detail', [
+                'inscription' => $inscription,
+                'userRole'    => [
+                    'estResponsable'  => $user->hasAnyRole(['admin', 'responsable_dcirp']),
+                    'estOrganisateur' => $user->hasRole('organisateur'),
+                ],
             ]);
+        }
+
+        // Le participant voit la version Show (sa propre vue)
+        return Inertia::render('Inscriptions/Show', [
+            'inscription' => $inscription,
+        ]);
+    }
+
+   
+    public function mesInscriptions(Request $request): InertiaResponse
+    {
+        $user = Auth::user();
+        abort_unless($user, 403);
+
+        $query = Inscription::query()
+            ->with(['evenement.typeEvenement', 'evenement.lieu'])
+            ->where('user_id', $user->id);
 
         if ($request->filled('statut')) {
             $query->where('statut', $request->statut);
         }
 
-        $inscriptions = $query->latest()->paginate(12)->through(fn(Inscription $i) => [
-            'id'          => $i->id,
-            'qr_code'     => $i->qr_code,
-            'statut'      => $i->statut,
-            'motif_refus' => $i->motif_refus,
-            'created_at'  => optional($i->created_at)?->toIso8601String(),
-            'date_analyse' => optional($i->date_analyse)?->toIso8601String(),
-            'evenement' => $i->evenement ? [
-                'id'         => $i->evenement->id,
-                'titre'      => $i->evenement->titre,
-                'visuel_url' => $i->evenement->visuel
-                    ? asset('storage/' . $i->evenement->visuel)
-                    : null,
-                'date_debut' => optional($i->evenement->date_debut)?->toIso8601String(),
-                'statut'     => $i->evenement->statut,
-                'lieu'       => $i->evenement->lieu ? ['nom' => $i->evenement->lieu->nom] : null,
-                'type'       => $i->evenement->typeEvenement ? [
-                    'nom'  => $i->evenement->typeEvenement->nom,
-                    'code' => $i->evenement->typeEvenement->code,
-                ] : null,
-            ] : null,
-            'tarif' => $i->tarif ? [
-                'libelle' => $i->tarif->nom,
-                'montant' => (float) $i->tarif->montant,
-                'devise'  => 'FCFA',
-            ] : null,
-            'paiement' => $i->paiement ? [
-                'statut' => $i->paiement->statut,
-            ] : null,
-        ]);
-
-        $stats = [
-            'total'      => Inscription::where('user_id', $user->id)->count(),
-            'en_attente' => Inscription::where('user_id', $user->id)
-                ->whereIn('statut', ['en_attente', 'en_analyse'])->count(),
-            'acceptees'  => Inscription::where('user_id', $user->id)
-                ->whereIn('statut', ['acceptee', 'confirmee', 'present'])->count(),
-            'refusees'   => Inscription::where('user_id', $user->id)
-                ->where('statut', 'refusee')->count(),
-        ];
+        $inscriptions = $query->latest()->get();
 
         return Inertia::render('Inscriptions/MesInscriptions', [
             'inscriptions' => $inscriptions,
-            'stats'        => $stats,
             'filters'      => $request->only(['statut']),
         ]);
     }
 
-    /**
-     * Annuler une inscription (par le participant lui-même).
-     */
     public function annuler(Inscription $inscription): RedirectResponse
     {
-        abort_unless($inscription->user_id === Auth::id(), 403);
+        $user = Auth::user();
+        abort_unless($user && $inscription->user_id === $user->id, 403);
 
-        if (!in_array($inscription->statut, ['en_attente', 'en_analyse', 'acceptee'])) {
-            return back()->with(
-                'error',
-                "Impossible d'annuler ce dossier (statut : {$inscription->statut})."
-            );
+        if (!in_array($inscription->statut, [
+            Inscription::STATUT_PREINSCRIT,
+            Inscription::STATUT_PRESELECTIONNE,
+            Inscription::STATUT_DOSSIER_SOUMIS,
+        ])) {
+            return back()->with('error', 'Cette inscription ne peut plus être annulée.');
         }
 
-        $inscription->update(['statut' => 'annulee']);
+        $inscription->update(['statut' => Inscription::STATUT_ANNULEE]);
 
-        return back()->with('success', 'Votre dossier a été annulé.');
+        return back()->with('success', 'Inscription annulée.');
+    }
+
+
+    private function reglesValidationDossier(?string $typeCode): array
+    {
+        $base = [
+            'motivation'  => ['nullable', 'string', 'max:2000'],
+            'token'       => ['nullable', 'string'],
+        ];
+
+        return match ($typeCode) {
+            'BARA_MOUSSO' => array_merge($base, [
+                'localite'           => ['required', 'string', 'max:100'],
+                'domaine_activite'   => ['required', 'string', 'max:100'],
+                'effectif_employe'   => ['required', 'string', 'max:50'],
+                'annee_creation'     => ['nullable', 'integer', 'min:1900', 'max:' . now()->year],
+                'url_video_pitch'    => ['nullable', 'url', 'max:500'],
+                'besoins_financiers' => ['nullable', 'numeric', 'min:0'],
+                'description_projet' => ['required', 'string', 'min:50', 'max:3000'],
+            ]),
+            'SPORT' => array_merge($base, [
+                'nom_equipe'        => ['required', 'string', 'max:200'],
+                'capitaine'         => ['required', 'string', 'max:200'],
+                'categorie_age'     => ['required', 'string', 'max:50'],
+                'effectif_equipe'   => ['required', 'integer', 'min:1', 'max:30'],
+                'couleurs_maillot'  => ['nullable', 'string', 'max:100'],
+                'coach_nom'         => ['nullable', 'string', 'max:200'],
+                'joueurs_licencies' => ['nullable', 'integer', 'min:0'],
+            ]),
+            'HACK' => array_merge($base, [
+                'nom_equipe'        => ['required', 'string', 'max:200'],
+                'niveau_equipe'     => ['required', 'string', 'max:50'],
+                'technologies'      => ['nullable', 'string', 'max:1000'],
+                'presence_complete' => ['boolean'],
+                'url_portfolio'     => ['nullable', 'url', 'max:500'],
+                'idee'              => ['required', 'string', 'min:30'],
+            ]),
+            'CHALLENGE' => array_merge($base, [
+                'titre_idee'           => ['required', 'string', 'max:300'],
+                'description'          => ['required', 'string', 'min:100'],
+                'stade_maturite'       => ['required', 'string', 'max:50'],
+                'marche_vise'          => ['required', 'string', 'max:50'],
+                'investissement_requis'=> ['nullable', 'numeric', 'min:0'],
+                'statut_juridique'     => ['required', 'string', 'max:100'],
+            ]),
+            default => $base,
+        };
     }
 }

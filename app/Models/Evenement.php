@@ -272,4 +272,32 @@ class Evenement extends Model
     {
         return $this->typeEvenement?->code === 'SALON';
     }
+
+    /**
+     * Matériel affecté à cet événement.
+     */
+    public function materiels(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Materiel::class, 'evenement_materiel')
+                    ->withPivot(['quantite_prevue', 'quantite_sortie', 'quantite_retournee', 'statut', 'note'])
+                    ->withTimestamps();
+    }
+
+    /**
+     * Prestataires affectés à cet événement.
+     */
+    public function prestataires(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Prestataire::class, 'evenement_prestataire')
+                    ->withPivot(['prestation', 'montant_prevu', 'montant_final', 'statut', 'contrat_pdf', 'note'])
+                    ->withTimestamps();
+    }
+
+    /**
+     * Postes bénévoles ouverts pour cet événement.
+     */
+    public function postesBenevoles(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PosteBenevole::class);
+    }
 }

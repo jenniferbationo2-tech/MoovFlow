@@ -13,15 +13,14 @@ class Lieu extends Model
     protected $table = 'lieux';
 
     protected $fillable = [
-        'nom',
-        'adresse',
-        'coordonnees_gps',
+        'nom', 'adresse', 'ville', 'capacite_max',
+        'description', 'photo', 'actif',
     ];
 
-    public function salles(): HasMany
-    {
-        return $this->hasMany(Salle::class);
-    }
+    protected $casts = [
+        'capacite_max' => 'integer',
+        'actif'        => 'boolean',
+    ];
 
     public function evenements(): HasMany
     {

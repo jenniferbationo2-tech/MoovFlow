@@ -1,48 +1,12 @@
 <script setup>
-import { computed, ref } from 'vue'
-import { Link, router, usePage } from '@inertiajs/vue3'
+import { computed } from 'vue'
+import { Link } from '@inertiajs/vue3'
 import PublicLayout from '@/Layouts/PublicLayout.vue'
 
 const props = defineProps({
-    inscriptions: Object,
-    stats:        Object,
-    filters:      Object,
+    inscriptions: { type: Array, required: true },
+    filters:      { type: Object, default: () => ({}) },
 })
-
-const page = usePage()
-const user = computed(() => page.props.auth?.user ?? null)
-
-
-const filtreStatut = ref(props.filters?.statut ?? '')
-
-const filtrer = (statut) => {
-    filtreStatut.value = statut
-    router.get('/mes-inscriptions',
-        statut ? { statut } : {},
-        { preserveState: true, preserveScroll: true }
-    )
-}
-
-
-const couleurStatut = (statut) => ({
-    en_attente:  { bg: 'bg-amber-50',    text: 'text-amber-700',    dot: 'bg-amber-500',    label: 'En attente d\'analyse' },
-    en_analyse:  { bg: 'bg-blue-50',     text: 'text-blue-700',     dot: 'bg-blue-500',     label: 'En cours d\'analyse' },
-    acceptee:    { bg: 'bg-emerald-50',  text: 'text-emerald-700',  dot: 'bg-emerald-500',  label: 'Acceptée — En attente de paiement' },
-    confirmee:   { bg: 'bg-emerald-100', text: 'text-emerald-800',  dot: 'bg-emerald-600',  label: 'Confirmée' },
-    refusee:     { bg: 'bg-red-50',      text: 'text-red-700',      dot: 'bg-red-500',      label: 'Refusée' },
-    annulee:     { bg: 'bg-slate-100',   text: 'text-slate-600',    dot: 'bg-slate-400',    label: 'Annulée' },
-    present:     { bg: 'bg-emerald-100', text: 'text-emerald-800',  dot: 'bg-emerald-600',  label: 'Présent à l\'événement' },
-}[statut] || { bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400', label: statut })
-
-const couleurType = (code) => ({
-    BARA_MOUSSO: { bg: 'bg-amber-50',    text: 'text-amber-700' },
-    CONF:        { bg: 'bg-rose-50',     text: 'text-rose-700' },
-    SPORT:       { bg: 'bg-blue-50',     text: 'text-blue-700' },
-    CHALLENGE:   { bg: 'bg-violet-50',   text: 'text-violet-700' },
-    FORMATION:   { bg: 'bg-emerald-50',  text: 'text-emerald-700' },
-    HACK:        { bg: 'bg-orange-50',   text: 'text-orange-700' },
-    SALON:       { bg: 'bg-indigo-50',   text: 'text-indigo-700' },
-}[code] || { bg: 'bg-slate-50', text: 'text-slate-700' })
 
 const formaterDate = (d) => {
     if (!d) return '—'
@@ -51,215 +15,194 @@ const formaterDate = (d) => {
     })
 }
 
-const formaterMoisJour = (d) => {
-    if (!d) return { jour: '--', mois: '---' }
-    const date = new Date(d)
-    return {
-        jour: date.getDate().toString().padStart(2, '0'),
-        mois: date.toLocaleDateString('fr-FR', { month: 'short' }).toUpperCase().replace('.', ''),
-    }
-}
 
+const couleurStatut = (statut) => ({
+    preinscrit:     { dot: 'bg-amber-500',    text: 'text-amber-700',   label: 'Pré-inscrit' },
+    preselectionne: { dot: 'bg-blue-500',     text: 'text-blue-700',    label: 'Présélectionné' },
+    dossier_soumis: { dot: 'bg-indigo-500',   text: 'text-indigo-700',  label: 'Dossier soumis' },
+    en_analyse:     { dot: 'bg-violet-500',   text: 'text-violet-700',  label: 'En analyse' },
+    recommandee:    { dot: 'bg-cyan-500',     text: 'text-cyan-700',    label: 'Recommandée' },
+    acceptee:       { dot: 'bg-emerald-500',  text: 'text-emerald-700', label: 'Acceptée' },
+    confirmee:      { dot: 'bg-emerald-600',  text: 'text-emerald-800', label: 'Confirmée' },
+    refusee:        { dot: 'bg-red-500',      text: 'text-red-700',     label: 'Refusée' },
+    present:        { dot: 'bg-emerald-600',  text: 'text-emerald-800', label: 'Présent' },
+    annulee:        { dot: 'bg-slate-400',    text: 'text-slate-600',   label: 'Annulée' },
+}[statut] || { dot: 'bg-slate-400', text: 'text-slate-600', label: statut })
 
-const annuler = (inscription) => {
-    if (confirm(`Annuler votre dossier pour "${inscription.evenement?.titre}" ?`)) {
-        router.post(`/inscriptions/${inscription.id}/annuler`)
-    }
-}
+const couleurTypeIndicateur = (code) => ({
+    BARA_MOUSSO: 'bg-rose-500',
+    CONF:        'bg-blue-500',
+    SPORT:       'bg-cyan-500',
+    CHALLENGE:   'bg-violet-500',
+    FORMATION:   'bg-emerald-500',
+    HACK:        'bg-orange-500',
+    SALON:       'bg-indigo-500',
+}[code] || 'bg-slate-500')
+
+const progression = (statut) => ({
+    preinscrit: 15, preselectionne: 30, dossier_soumis: 50,
+    en_analyse: 65, recommandee: 80, acceptee: 90,
+    confirmee: 100, present: 100, refusee: 0, annulee: 0,
+}[statut] || 0)
+
+const stats = computed(() => ({
+    total:        props.inscriptions.length,
+    a_venir:      props.inscriptions.filter(i => ['confirmee', 'acceptee'].includes(i.statut)).length,
+    en_attente:   props.inscriptions.filter(i => ['preinscrit', 'preselectionne', 'dossier_soumis', 'en_analyse', 'recommandee'].includes(i.statut)).length,
+    a_completer:  props.inscriptions.filter(i => i.statut === 'preselectionne').length,
+}))
 </script>
 
 <template>
     <PublicLayout>
-        <div class="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+        <section class="bg-page-bg min-h-screen py-12">
+            <div class="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
 
-            <!-- ── EN-TÊTE ── -->
-            <div class="mb-8">
-                <h1 class="font-display text-3xl font-extrabold text-text-main">
-                    Mes inscriptions
-                </h1>
-                <p class="mt-1 text-sm text-text-sub">
-                    Suivez l'état de vos dossiers de candidature aux événements
-                </p>
-            </div>
+                <!-- En-tête -->
+                <div class="mb-10">
+                    <p class="text-xs font-bold uppercase tracking-[0.2em] text-text-muted">
+                        Espace personnel
+                    </p>
+                    <h1 class="mt-2 font-display text-3xl font-extrabold text-text-main">
+                        Mes inscriptions
+                    </h1>
+                    <p class="mt-2 text-sm text-text-sub">
+                        Suivez l'évolution de vos candidatures aux événements Moov Africa Burkina
+                    </p>
+                </div>
 
-           
-            <div class="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
-                <button @click="filtrer('')"
-                        :class="['rounded-xl bg-card p-4 text-left shadow-card transition hover:shadow-card-hover',
-                            !filtreStatut ? 'ring-2 ring-moov-blue' : '']">
-                    <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Total</p>
-                    <p class="mt-2 font-display text-2xl font-extrabold text-moov-blue">{{ stats.total }}</p>
-                </button>
-                <button @click="filtrer('en_attente')"
-                        :class="['rounded-xl bg-card p-4 text-left shadow-card transition hover:shadow-card-hover',
-                            filtreStatut === 'en_attente' ? 'ring-2 ring-amber-500' : '']">
-                    <p class="text-xs font-bold uppercase tracking-wider text-text-muted">En attente</p>
-                    <p class="mt-2 font-display text-2xl font-extrabold text-amber-600">{{ stats.en_attente }}</p>
-                </button>
-                <button @click="filtrer('confirmee')"
-                        :class="['rounded-xl bg-card p-4 text-left shadow-card transition hover:shadow-card-hover',
-                            filtreStatut === 'confirmee' ? 'ring-2 ring-emerald-500' : '']">
-                    <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Acceptées</p>
-                    <p class="mt-2 font-display text-2xl font-extrabold text-emerald-600">{{ stats.acceptees }}</p>
-                </button>
-                <button @click="filtrer('refusee')"
-                        :class="['rounded-xl bg-card p-4 text-left shadow-card transition hover:shadow-card-hover',
-                            filtreStatut === 'refusee' ? 'ring-2 ring-red-500' : '']">
-                    <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Refusées</p>
-                    <p class="mt-2 font-display text-2xl font-extrabold text-red-600">{{ stats.refusees }}</p>
-                </button>
-            </div>
+               
+                <div class="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+                    <div class="rounded-xl bg-white p-5 shadow-sm">
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-text-muted">Total</p>
+                        <p class="mt-3 font-display text-3xl font-extrabold text-text-main">{{ stats.total }}</p>
+                    </div>
+                    <div class="rounded-xl bg-white p-5 shadow-sm">
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-text-muted">À venir</p>
+                        <p class="mt-3 font-display text-3xl font-extrabold text-text-main">{{ stats.a_venir }}</p>
+                    </div>
+                    <div class="rounded-xl bg-white p-5 shadow-sm">
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-text-muted">En attente</p>
+                        <p class="mt-3 font-display text-3xl font-extrabold text-text-main">{{ stats.en_attente }}</p>
+                    </div>
+                    <div :class="['rounded-xl p-5 shadow-sm transition',
+                        stats.a_completer > 0 ? 'bg-moov-noir text-white' : 'bg-white']">
+                        <p :class="['text-[11px] font-bold uppercase tracking-wider',
+                            stats.a_completer > 0 ? 'text-white/60' : 'text-text-muted']">
+                            À compléter
+                        </p>
+                        <p :class="['mt-3 font-display text-3xl font-extrabold',
+                            stats.a_completer > 0 ? 'text-moov-orange' : 'text-text-main']">
+                            {{ stats.a_completer }}
+                        </p>
+                    </div>
+                </div>
 
-           
-            <div v-if="inscriptions.data?.length" class="space-y-4">
+                
+                <div v-if="inscriptions.length > 0" class="space-y-3">
+                    <Link v-for="insc in inscriptions"
+                          :key="insc.id"
+                          :href="`/inscriptions/${insc.id}`"
+                          class="group block rounded-xl bg-white p-6 shadow-sm transition hover:shadow-md">
 
-                <article v-for="insc in inscriptions.data" :key="insc.id"
-                         class="overflow-hidden rounded-xl bg-card shadow-card transition hover:shadow-card-hover">
+                        <div class="flex flex-wrap items-start justify-between gap-4">
 
-                    <div class="grid grid-cols-1 md:grid-cols-[180px,1fr]">
+                            <!-- Colonne gauche -->
+                            <div class="min-w-0 flex-1">
 
-                        <!-- Visuel + Date -->
-                        <div class="relative h-32 md:h-auto">
-                            <img v-if="insc.evenement?.visuel_url"
-                                 :src="insc.evenement.visuel_url"
-                                 :alt="insc.evenement.titre"
-                                 class="h-full w-full object-cover"/>
-
-                            <!-- Placeholder sobre -->
-                            <div v-else
-                                 :class="['flex h-full w-full items-center justify-center', couleurType(insc.evenement?.type?.code).bg]">
-                                <p :class="['font-display text-3xl font-extrabold opacity-30', couleurType(insc.evenement?.type?.code).text]">
-                                    {{ insc.evenement?.type?.nom?.substring(0, 2).toUpperCase() ?? 'EV' }}
-                                </p>
-                            </div>
-
-                            <div class="absolute left-3 top-3 rounded-md bg-white px-2 py-1 text-center shadow-md">
-                                <p class="font-display text-base font-extrabold leading-none text-text-main">
-                                    {{ formaterMoisJour(insc.evenement?.date_debut).jour }}
-                                </p>
-                                <p class="text-[9px] font-bold uppercase tracking-wider text-text-sub">
-                                    {{ formaterMoisJour(insc.evenement?.date_debut).mois }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <!-- Contenu -->
-                        <div class="flex flex-col p-5">
-                            <div class="flex items-start justify-between gap-3">
-                                <div class="min-w-0 flex-1">
-                                    <span :class="['mb-2 inline-block rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
-                                        couleurType(insc.evenement?.type?.code).bg,
-                                        couleurType(insc.evenement?.type?.code).text]">
-                                        {{ insc.evenement?.type?.nom }}
+                                <!-- Type avec petit point coloré -->
+                                <div class="mb-2 flex items-center gap-2">
+                                    <span :class="['h-2 w-2 rounded-full',
+                                        couleurTypeIndicateur(insc.evenement?.type_evenement?.code)]"/>
+                                    <span class="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                                        {{ insc.evenement?.type_evenement?.nom ?? '—' }}
                                     </span>
-
-                                    <h3 class="font-display text-lg font-extrabold leading-tight text-text-main">
-                                        {{ insc.evenement?.titre }}
-                                    </h3>
-
-                                    <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-text-sub">
-                                        <span>{{ formaterDate(insc.evenement?.date_debut) }}</span>
-                                        <span v-if="insc.evenement?.lieu">·</span>
-                                        <span v-if="insc.evenement?.lieu">{{ insc.evenement.lieu.nom }}</span>
-                                    </div>
-
-                                    <p class="mt-2 text-xs text-text-muted">
-                                        Référence dossier :
-                                        <span class="font-mono font-bold text-text-main">{{ insc.qr_code }}</span>
-                                    </p>
                                 </div>
 
-                                <!-- Statut -->
-                                <span :class="['inline-flex flex-shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold',
-                                    couleurStatut(insc.statut).bg, couleurStatut(insc.statut).text]">
+                                <!-- Titre -->
+                                <h3 class="font-display text-lg font-extrabold text-text-main transition group-hover:text-moov-blue">
+                                    {{ insc.evenement?.titre }}
+                                </h3>
+
+                                <!-- Infos -->
+                                <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-sub">
+                                    <span class="flex items-center gap-1.5">
+                                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                        </svg>
+                                        {{ formaterDate(insc.evenement?.date_debut) }}
+                                    </span>
+                                    <span v-if="insc.evenement?.lieu" class="flex items-center gap-1.5">
+                                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0L6.343 16.657a8 8 0 1111.314 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                        </svg>
+                                        {{ insc.evenement.lieu.nom }}
+                                    </span>
+                                    <span v-if="insc.qr_code && ['confirmee', 'acceptee', 'present'].includes(insc.statut)"
+                                          class="flex items-center gap-1.5 font-mono font-bold text-emerald-700">
+                                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                                        </svg>
+                                        {{ insc.qr_code }}
+                                    </span>
+                                </div>
+
+                                <!-- Barre de progression discrète -->
+                                <div v-if="!['refusee', 'annulee'].includes(insc.statut)"
+                                     class="mt-4 max-w-md">
+                                    <div class="flex items-center gap-3">
+                                        <div class="h-1 flex-1 overflow-hidden rounded-full bg-page-bg">
+                                            <div class="h-full rounded-full bg-text-main transition-all"
+                                                 :style="{ width: progression(insc.statut) + '%' }"/>
+                                        </div>
+                                        <span class="text-[10px] font-bold tabular-nums text-text-muted">
+                                            {{ progression(insc.statut) }}%
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <!-- Motif rejet -->
+                                <p v-if="insc.statut === 'refusee' && insc.motif_refus"
+                                   class="mt-3 text-xs text-text-sub">
+                                    <span class="font-bold text-red-700">Motif :</span> {{ insc.motif_refus }}
+                                </p>
+                            </div>
+
+                            <!-- Colonne droite : statut + action -->
+                            <div class="flex flex-col items-end gap-2">
+                                <span class="inline-flex items-center gap-2 text-sm font-bold"
+                                      :class="couleurStatut(insc.statut).text">
                                     <span :class="['h-1.5 w-1.5 rounded-full', couleurStatut(insc.statut).dot]"/>
                                     {{ couleurStatut(insc.statut).label }}
                                 </span>
-                            </div>
 
-                            <!-- Motif refus si refusée -->
-                            <div v-if="insc.statut === 'refusee' && insc.motif_refus"
-                                 class="mt-3 rounded-lg border border-red-200 bg-red-50 p-3">
-                                <p class="text-xs font-bold uppercase tracking-wider text-red-700">Motif du refus</p>
-                                <p class="mt-1 text-sm text-red-900">{{ insc.motif_refus }}</p>
-                            </div>
-
-                        
-                            <div v-if="insc.statut === 'acceptee' && insc.tarif?.montant > 0"
-                                 class="mt-3 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-3">
-                                <div>
-                                    <p class="text-xs font-bold uppercase tracking-wider text-amber-800">Paiement requis</p>
-                                    <p class="mt-1 font-display text-lg font-extrabold text-amber-900">
-                                        {{ Number(insc.tarif.montant).toLocaleString('fr-FR') }} {{ insc.tarif.devise }}
-                                    </p>
-                                </div>
-                                <Link :href="`/inscriptions/${insc.id}/payer`"
-                                      class="rounded-lg bg-moov-orange px-4 py-2 text-xs font-bold text-white transition hover:bg-moov-orange-dark">
-                                    Payer maintenant →
-                                </Link>
-                            </div>
-
-                            <!-- Actions -->
-                            <div class="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border-soft pt-4">
-                                <div class="text-xs text-text-muted">
-                                    Soumis le {{ formaterDate(insc.created_at) }}
-                                </div>
-                                <div class="flex gap-2">
-                                    <Link :href="`/evenements/${insc.evenement?.id}`"
-                                          class="rounded-lg border border-border-soft px-3 py-1.5 text-xs font-bold text-text-sub transition hover:border-moov-blue hover:text-moov-blue">
-                                        Voir l'événement
-                                    </Link>
-                                    <Link :href="`/inscriptions/${insc.id}`"
-                                          class="rounded-lg bg-moov-blue px-3 py-1.5 text-xs font-bold text-white transition hover:bg-moov-blue-dark">
-                                        Détails du dossier
-                                    </Link>
-                                    <button v-if="['en_attente', 'en_analyse', 'acceptee'].includes(insc.statut)"
-                                            @click="annuler(insc)"
-                                            class="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 transition hover:border-red-400 hover:bg-red-50">
-                                        Annuler
-                                    </button>
-                                </div>
+                                <span v-if="insc.statut === 'preselectionne'"
+                                      class="rounded-md bg-moov-orange/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-moov-orange">
+                                    Action requise
+                                </span>
                             </div>
                         </div>
-                    </div>
-                </article>
+                    </Link>
+                </div>
 
+                <!-- État vide -->
+                <div v-else class="rounded-xl bg-white p-16 text-center shadow-sm">
+                    <svg class="mx-auto h-12 w-12 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                    </svg>
+                    <p class="mt-4 font-display text-base font-extrabold text-text-main">
+                        Aucune inscription pour le moment
+                    </p>
+                    <p class="mt-1 text-sm text-text-sub">
+                        Découvrez les événements ouverts aux inscriptions
+                    </p>
+                    <Link href="/evenements"
+                          class="mt-6 inline-block rounded-lg bg-moov-noir px-5 py-2.5 text-sm font-bold text-white transition hover:bg-moov-noir-soft">
+                        Voir les événements →
+                    </Link>
+                </div>
             </div>
-
-           
-            <div v-else class="rounded-xl border border-dashed border-border-soft bg-white py-20 text-center">
-                <svg class="mx-auto h-12 w-12 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                </svg>
-
-                <h3 class="mt-4 font-display text-lg font-extrabold text-text-main">
-                    {{ filtreStatut ? 'Aucun dossier dans cette catégorie' : 'Aucun dossier d\'inscription' }}
-                </h3>
-                <p class="mt-2 text-sm text-text-sub">
-                    {{ filtreStatut
-                        ? 'Essayez un autre filtre ou consultez tous vos dossiers.'
-                        : 'Vous n\'avez encore soumis aucun dossier de candidature.' }}
-                </p>
-
-                <Link href="/evenements"
-                      class="mt-6 inline-block rounded-lg bg-moov-noir px-6 py-3 text-sm font-bold text-white shadow-md transition hover:bg-moov-noir-soft">
-                    Découvrir les événements →
-                </Link>
-            </div>
-
-            
-            <div v-if="inscriptions.links?.length > 3" class="mt-8 flex justify-center gap-1">
-                <template v-for="link in inscriptions.links" :key="link.label">
-                    <Link v-if="link.url" :href="link.url" v-html="link.label"
-                          :class="['rounded-lg px-3 py-1.5 text-sm font-semibold transition',
-                              link.active
-                                  ? 'bg-moov-blue text-white'
-                                  : 'border border-border-soft bg-white text-text-sub hover:border-moov-blue/30']"/>
-                    <span v-else v-html="link.label"
-                          class="rounded-lg border border-border-soft bg-white px-3 py-1.5 text-sm text-text-muted"/>
-                </template>
-            </div>
-
-        </div>
+        </section>
     </PublicLayout>
 </template>

@@ -2,243 +2,280 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Benevole;
 use App\Models\Evenement;
+use App\Models\Materiel;
+use App\Models\Prestataire;
+use App\Models\PosteBenevole;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class LogistiqueController extends Controller
 {
     /**
-     * Page principale du module Logistique.
+     * Dashboard logistique d'un événement.
      */
-    public function index(Evenement $evenement): Response
+    public function show(Evenement $evenement): Response
     {
         $this->authorizeAccess($evenement);
 
-        $evenement->load(['lieu.salles']);
+        $evenement->load([
+            'typeEvenement',
+            'lieu',
+            'materiels',
+            'prestataires',
+            'postesBenevoles' => function ($q) {
+                $q->with(['candidatures.user']);
+            },
+        ]);
 
-        // Ressources (matériel)
-        $ressources = DB::table('ressources')
-            ->where('evenement_id', $evenement->id)
-            ->orderBy('nom')
-            ->get()
-            ->map(fn ($r) => [
-                'id'             => $r->id,
-                'nom'            => $r->nom,
-                'type'           => $r->type ?? 'materiel',
-                'quantite_totale'=> $r->quantite_totale ?? 0,
-                'quantite_dispo' => $r->quantite_disponible ?? 0,
-                'unite'          => $r->unite ?? null,
-                'cout_unitaire'  => (float) ($r->cout_unitaire ?? 0),
-                'fournisseur'    => $r->fournisseur ?? null,
-                'observations'   => $r->observations ?? null,
-            ])->all();
+        // Calculs synthèse
+        $totalDepenses = $evenement->prestataires->sum(function ($p) {
+            return $p->pivot->montant_final ?? $p->pivot->montant_prevu ?? 0;
+        });
 
-        // Dotations (matériel distribué)
-        $dotations = DB::table('dotations')
-            ->where('evenement_id', $evenement->id)
-            ->orderByDesc('created_at')
-            ->get()
-            ->map(fn ($d) => [
-                'id'             => $d->id,
-                'beneficiaire'   => $d->beneficiaire ?? '—',
-                'item'           => $d->item ?? '—',
-                'quantite'       => $d->quantite ?? 1,
-                'taille'         => $d->taille ?? null,
-                'date_remise'    => $d->date_remise ?? null,
-                'statut'         => $d->statut ?? 'distribue',
-                'a_retourner'    => (bool) ($d->a_retourner ?? false),
-                'date_retour'    => $d->date_retour ?? null,
-            ])->all();
+        $kpisLogistique = [
+            'materiel_count'     => $evenement->materiels->count(),
+            'prestataire_count'  => $evenement->prestataires->count(),
+            'postes_count'       => $evenement->postesBenevoles->count(),
+            'benevoles_acceptes' => $evenement->postesBenevoles->sum(function ($p) {
+                return $p->candidatures->where('statut', 'accepte')->count();
+            }),
+            'total_depenses'     => $totalDepenses,
+        ];
 
-        // Bénévoles
-        $benevoles = Benevole::query()
-            ->where('evenement_id', $evenement->id)
-            ->orderBy('nom')
-            ->get()
-            ->map(fn (Benevole $b) => [
-                'id'              => $b->id,
-                'nom'             => $b->nom,
-                'prenom'          => $b->prenom,
-                'email'           => $b->email,
-                'telephone'       => $b->telephone,
-                'poste_affecte'   => $b->poste_affecte,
-                'horaires'        => $b->horaires,
-                'statut'          => $b->statut ?? 'inscrit',
-                'date_inscription'=> optional($b->created_at)?->toIso8601String(),
-            ])->all();
+        // Listes pour les modales d'affectation
+        $materielsDispo   = Materiel::orderBy('nom')->get();
+        $prestatairesDispo = Prestataire::where('actif', true)->orderBy('nom')->get();
 
-        return Inertia::render('Logistique/Index', [
-            'evenement' => [
-                'id'    => $evenement->id,
-                'titre' => $evenement->titre,
-                'lieu'  => $evenement->lieu ? ['nom' => $evenement->lieu->nom] : null,
-            ],
-            'ressources' => $ressources,
-            'dotations'  => $dotations,
-            'benevoles'  => $benevoles,
+        return Inertia::render('Evenements/Logistique', [
+            'evenement'         => $evenement,
+            'kpis'              => $kpisLogistique,
+            'materielsDispo'    => $materielsDispo,
+            'prestatairesDispo' => $prestatairesDispo,
+            'categoriesPostes'  => PosteBenevole::CATEGORIES,
+            'permissions'       => $this->getPermissions($evenement),
         ]);
     }
 
-    
-    public function storeRessource(Request $request, Evenement $evenement): RedirectResponse
+    // ════════════════════════════════════════
+    //   MATÉRIEL : Affectation à l'événement
+    // ════════════════════════════════════════
+
+    public function affecterMateriel(Request $request, Evenement $evenement): RedirectResponse
     {
-        $this->authorizeAccess($evenement);
+        $this->authorizeModification($evenement);
 
         $validated = $request->validate([
-            'nom'             => ['required', 'string', 'max:255'],
-            'type'            => ['nullable', 'string', 'max:50'],
-            'quantite_totale' => ['required', 'integer', 'min:1'],
-            'unite'           => ['nullable', 'string', 'max:50'],
-            'cout_unitaire'   => ['nullable', 'numeric', 'min:0'],
-            'fournisseur'     => ['nullable', 'string', 'max:255'],
-            'observations'    => ['nullable', 'string', 'max:500'],
+            'materiel_id'     => ['required', 'exists:materiels,id'],
+            'quantite_prevue' => ['required', 'integer', 'min:1'],
+            'note'            => ['nullable', 'string', 'max:500'],
         ]);
 
-        DB::table('ressources')->insert([
-            'evenement_id'        => $evenement->id,
-            'nom'                 => $validated['nom'],
-            'type'                => $validated['type'] ?? 'materiel',
-            'quantite_totale'     => $validated['quantite_totale'],
-            'quantite_disponible' => $validated['quantite_totale'],
-            'unite'               => $validated['unite'] ?? null,
-            'cout_unitaire'       => $validated['cout_unitaire'] ?? 0,
-            'fournisseur'         => $validated['fournisseur'] ?? null,
-            'observations'        => $validated['observations'] ?? null,
-            'created_at'          => now(),
-            'updated_at'          => now(),
+        // Empêcher les doublons
+        if ($evenement->materiels()->where('materiel_id', $validated['materiel_id'])->exists()) {
+            return back()->with('error', 'Ce matériel est déjà affecté à cet événement.');
+        }
+
+        $evenement->materiels()->attach($validated['materiel_id'], [
+            'quantite_prevue'    => $validated['quantite_prevue'],
+            'quantite_sortie'    => 0,
+            'quantite_retournee' => 0,
+            'statut'             => 'prevu',
+            'note'               => $validated['note'] ?? null,
+            'cree_par_id'        => Auth::id(),
         ]);
 
-        return back()->with('success', 'Ressource ajoutée à l\'inventaire.');
+        return back()->with('success', 'Matériel affecté à l\'événement.');
     }
 
-    public function destroyRessource(Evenement $evenement, int $ressourceId): RedirectResponse
+    public function detacherMateriel(Evenement $evenement, $materielId): RedirectResponse
     {
-        $this->authorizeAccess($evenement);
+        $this->authorizeModification($evenement);
 
-        DB::table('ressources')
-            ->where('id', $ressourceId)
-            ->where('evenement_id', $evenement->id)
-            ->delete();
+        $evenement->materiels()->detach($materielId);
 
-        return back()->with('success', 'Ressource supprimée.');
+        return back()->with('success', 'Matériel retiré de l\'événement.');
     }
 
-    
-
-    public function storeDotation(Request $request, Evenement $evenement): RedirectResponse
+    public function updateStatutMateriel(Request $request, Evenement $evenement, $materielId): RedirectResponse
     {
-        $this->authorizeAccess($evenement);
+        $this->authorizeModification($evenement);
+
+        $request->validate([
+            'statut'             => ['required', 'in:prevu,sorti,retourne'],
+            'quantite_sortie'    => ['nullable', 'integer', 'min:0'],
+            'quantite_retournee' => ['nullable', 'integer', 'min:0'],
+        ]);
+
+        $evenement->materiels()->updateExistingPivot($materielId, [
+            'statut'             => $request->statut,
+            'quantite_sortie'    => $request->quantite_sortie ?? 0,
+            'quantite_retournee' => $request->quantite_retournee ?? 0,
+        ]);
+
+        return back()->with('success', 'Statut du matériel mis à jour.');
+    }
+
+    // ════════════════════════════════════════
+    //   PRESTATAIRES : Affectation à l'événement
+    // ════════════════════════════════════════
+
+    public function affecterPrestataire(Request $request, Evenement $evenement): RedirectResponse
+    {
+        $this->authorizeModification($evenement);
 
         $validated = $request->validate([
-            'beneficiaire' => ['required', 'string', 'max:255'],
-            'item'         => ['required', 'string', 'max:255'],
-            'quantite'     => ['required', 'integer', 'min:1'],
-            'taille'       => ['nullable', 'string', 'max:50'],
-            'a_retourner'  => ['nullable', 'boolean'],
+            'prestataire_id' => ['required', 'exists:prestataires,id'],
+            'prestation'     => ['required', 'string', 'max:500'],
+            'montant_prevu'  => ['nullable', 'numeric', 'min:0'],
+            'contrat_pdf'    => ['nullable', 'file', 'mimetypes:application/pdf', 'max:10240'],
+            'note'           => ['nullable', 'string', 'max:1000'],
         ]);
 
-        DB::table('dotations')->insert([
+        if ($evenement->prestataires()->where('prestataire_id', $validated['prestataire_id'])->exists()) {
+            return back()->with('error', 'Ce prestataire est déjà affecté.');
+        }
+
+        $contratPath = null;
+        if ($request->hasFile('contrat_pdf')) {
+            $contratPath = $request->file('contrat_pdf')->store('contrats', 'public');
+        }
+
+        $evenement->prestataires()->attach($validated['prestataire_id'], [
+            'prestation'    => $validated['prestation'],
+            'montant_prevu' => $validated['montant_prevu'] ?? null,
+            'statut'        => 'devis',
+            'contrat_pdf'   => $contratPath,
+            'note'          => $validated['note'] ?? null,
+            'cree_par_id'   => Auth::id(),
+        ]);
+
+        return back()->with('success', 'Prestataire affecté à l\'événement.');
+    }
+
+    public function detacherPrestataire(Evenement $evenement, $prestataireId): RedirectResponse
+    {
+        $this->authorizeModification($evenement);
+        $evenement->prestataires()->detach($prestataireId);
+        return back()->with('success', 'Prestataire retiré.');
+    }
+
+    public function updateStatutPrestataire(Request $request, Evenement $evenement, $prestataireId): RedirectResponse
+    {
+        $this->authorizeModification($evenement);
+
+        $request->validate([
+            'statut'        => ['required', 'in:devis,confirme,paye,annule'],
+            'montant_final' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $evenement->prestataires()->updateExistingPivot($prestataireId, [
+            'statut'        => $request->statut,
+            'montant_final' => $request->montant_final,
+        ]);
+
+        return back()->with('success', 'Statut prestataire mis à jour.');
+    }
+
+    // ════════════════════════════════════════
+    //   POSTES BÉNÉVOLES
+    // ════════════════════════════════════════
+
+    public function creerPosteBenevole(Request $request, Evenement $evenement): RedirectResponse
+    {
+        $this->authorizeModification($evenement);
+
+        $validated = $request->validate([
+            'nom_poste'            => ['required', 'string', 'max:200'],
+            'categorie'            => ['required', 'in:' . implode(',', array_keys(PosteBenevole::CATEGORIES))],
+            'description'          => ['required', 'string'],
+            'competences_requises' => ['nullable', 'string'],
+            'places_max'           => ['required', 'integer', 'min:1'],
+            'horaire_debut'        => ['nullable', 'date'],
+            'horaire_fin'          => ['nullable', 'date', 'after_or_equal:horaire_debut'],
+        ]);
+
+        PosteBenevole::create(array_merge($validated, [
             'evenement_id' => $evenement->id,
-            'beneficiaire' => $validated['beneficiaire'],
-            'item'         => $validated['item'],
-            'quantite'     => $validated['quantite'],
-            'taille'       => $validated['taille'] ?? null,
-            'date_remise'  => now(),
-            'statut'       => 'distribue',
-            'a_retourner'  => $validated['a_retourner'] ?? false,
-            'created_at'   => now(),
-            'updated_at'   => now(),
-        ]);
+            'statut'       => 'ouvert',
+            'cree_par_id'  => Auth::id(),
+        ]));
 
-        return back()->with('success', 'Dotation enregistrée.');
+        return back()->with('success', 'Poste bénévole créé.');
     }
 
-    public function returnDotation(Evenement $evenement, int $dotationId): RedirectResponse
+    public function updatePosteBenevole(Request $request, PosteBenevole $poste): RedirectResponse
     {
-        $this->authorizeAccess($evenement);
-
-        DB::table('dotations')
-            ->where('id', $dotationId)
-            ->where('evenement_id', $evenement->id)
-            ->update([
-                'statut'      => 'retourne',
-                'date_retour' => now(),
-                'updated_at'  => now(),
-            ]);
-
-        return back()->with('success', 'Retour enregistré.');
-    }
-
-    public function destroyDotation(Evenement $evenement, int $dotationId): RedirectResponse
-    {
-        $this->authorizeAccess($evenement);
-
-        DB::table('dotations')
-            ->where('id', $dotationId)
-            ->where('evenement_id', $evenement->id)
-            ->delete();
-
-        return back()->with('success', 'Dotation supprimée.');
-    }
-
-    
-
-    public function storeBenevole(Request $request, Evenement $evenement): RedirectResponse
-    {
-        $this->authorizeAccess($evenement);
+        $this->authorizeModification($poste->evenement);
 
         $validated = $request->validate([
-            'nom'           => ['required', 'string', 'max:255'],
-            'prenom'        => ['required', 'string', 'max:255'],
-            'email'         => ['nullable', 'email', 'max:255'],
-            'telephone'     => ['nullable', 'string', 'max:50'],
-            'poste_affecte' => ['nullable', 'string', 'max:255'],
-            'horaires'      => ['nullable', 'string', 'max:255'],
+            'nom_poste'            => ['required', 'string', 'max:200'],
+            'categorie'            => ['required', 'in:' . implode(',', array_keys(PosteBenevole::CATEGORIES))],
+            'description'          => ['required', 'string'],
+            'competences_requises' => ['nullable', 'string'],
+            'places_max'           => ['required', 'integer', 'min:1'],
+            'horaire_debut'        => ['nullable', 'date'],
+            'horaire_fin'          => ['nullable', 'date'],
+            'statut'               => ['required', 'in:ouvert,ferme,complet'],
         ]);
 
-        Benevole::create([
-            'evenement_id'  => $evenement->id,
-            'nom'           => $validated['nom'],
-            'prenom'        => $validated['prenom'],
-            'email'         => $validated['email'] ?? null,
-            'telephone'     => $validated['telephone'] ?? null,
-            'poste_affecte' => $validated['poste_affecte'] ?? null,
-            'horaires'      => $validated['horaires'] ?? null,
-            'statut'        => 'inscrit',
-        ]);
+        $poste->update($validated);
 
-        return back()->with('success', 'Bénévole ajouté à l\'équipe.');
+        return back()->with('success', 'Poste bénévole mis à jour.');
     }
 
-    public function destroyBenevole(Evenement $evenement, Benevole $benevole): RedirectResponse
+    public function supprimerPosteBenevole(PosteBenevole $poste): RedirectResponse
     {
-        $this->authorizeAccess($evenement);
-        abort_unless($benevole->evenement_id === $evenement->id, 403);
-
-        $benevole->delete();
-
-        return back()->with('success', 'Bénévole retiré.');
+        $this->authorizeModification($poste->evenement);
+        $poste->delete();
+        return back()->with('success', 'Poste bénévole supprimé.');
     }
 
-    /**
-     * Vérifie l'accès logistique (admin/responsable/créateur).
-     */
+    // ════════════════════════════════════════
+    //   MÉTHODES PRIVÉES
+    // ════════════════════════════════════════
+
     private function authorizeAccess(Evenement $evenement): void
     {
         $user = Auth::user();
         abort_unless(
-            $user && (
-                $user->hasAnyRole(['admin', 'responsable_dcirp']) ||
-                (int) $evenement->created_by === (int) $user->id
-            ),
-            403,
-            'Accès réservé au staff.'
+            $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']),
+            403, 'Accès réservé au staff.'
         );
+    }
+
+    private function authorizeModification(Evenement $evenement): void
+    {
+        $user = Auth::user();
+
+        // Admin & Responsable : tout pouvoir
+        if ($user->hasAnyRole(['admin', 'responsable_dcirp'])) {
+            return;
+        }
+
+        // Organisateur : seulement SES événements
+        if ($user->hasRole('organisateur') && $evenement->created_by === $user->id) {
+            return;
+        }
+
+        abort(403, 'Vous ne pouvez modifier la logistique que de vos propres événements.');
+    }
+
+    private function getPermissions(Evenement $evenement): array
+    {
+        $user = Auth::user();
+        $estResponsable = $user?->hasAnyRole(['admin', 'responsable_dcirp']) ?? false;
+        $estProprio = $user?->hasRole('organisateur') && $evenement->created_by === $user?->id;
+
+        return [
+            'peut_modifier'  => $estResponsable || $estProprio,
+            'est_responsable'=> $estResponsable,
+            'est_proprio'    => $estProprio,
+        ];
     }
 }
