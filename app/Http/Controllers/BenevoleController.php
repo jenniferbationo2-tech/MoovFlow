@@ -2,132 +2,219 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\BenevoleAffectation;
-use App\Models\Evenement;
-use App\Models\User;
-use App\Services\VolunteerSchedulerService;
+use App\Models\CandidatureBenevole;
+use App\Models\PosteBenevole;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class BenevoleController extends Controller
 {
-    public function __construct(
-        private readonly VolunteerSchedulerService $volunteerSchedulerService
-    ) {
+    // ════════════════════════════════════════
+    //   CÔTÉ PARTICIPANT
+    // ════════════════════════════════════════
+
+    /**
+     * Candidater à un poste bénévole.
+     */
+    public function candidater(Request $request, PosteBenevole $poste): RedirectResponse
+    {
+        $user = Auth::user();
+        abort_unless($user, 403, 'Connectez-vous pour candidater.');
+
+        // Seul le rôle 'participant' peut candidater
+        abort_unless(
+            $user->hasRole('participant'),
+            403,
+            'Seuls les participants peuvent candidater aux postes bénévoles.'
+        );
+
+        // Vérifier que le poste est ouvert
+        if ($poste->statut !== 'ouvert') {
+            return back()->with('error', 'Ce poste n\'est plus ouvert aux candidatures.');
+        }
+
+        // Vérifier qu'il reste des places
+        if ($poste->estComplet()) {
+            return back()->with('error', 'Ce poste est complet.');
+        }
+
+        // Vérifier qu'il n'a pas déjà candidaté
+        $dejaCandidate = CandidatureBenevole::where('poste_id', $poste->id)
+            ->where('user_id', $user->id)
+            ->whereNotIn('statut', ['refuse', 'annule'])
+            ->exists();
+
+        if ($dejaCandidate) {
+            return back()->with('error', 'Vous avez déjà candidaté à ce poste.');
+        }
+
+        $validated = $request->validate([
+            'motivation'     => ['required', 'string', 'min:30', 'max:2000'],
+            'experience'     => ['nullable', 'string', 'max:1000'],
+            'disponibilites' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        CandidatureBenevole::create([
+            'poste_id'        => $poste->id,
+            'user_id'         => $user->id,
+            'motivation'      => $validated['motivation'],
+            'experience'      => $validated['experience'] ?? null,
+            'disponibilites'  => $validated['disponibilites'] ?? null,
+            'statut'          => CandidatureBenevole::STATUT_CANDIDAT,
+        ]);
+
+        return back()->with('success', 'Votre candidature a été envoyée ! Vous serez notifié(e) de la décision par email.');
     }
 
     /**
-     * Affiche les bénévoles affectés et leur planning.
+     * Mes candidatures (vue participant).
      */
-    public function index(Evenement $evenement): Response
+    public function mesCandidatures(): Response
     {
-        abort_unless(request()->user()?->can('logistique.view'), 403);
+        $user = Auth::user();
+        abort_unless($user, 403);
 
-        $affectations = BenevoleAffectation::query()
-            ->with('user')
-            ->where('evenement_id', $evenement->id)
-            ->orderBy('creneau_debut')
+        $candidatures = CandidatureBenevole::query()
+            ->where('user_id', $user->id)
+            ->with([
+                'poste.evenement.typeEvenement',
+                'poste.evenement.lieu',
+            ])
+            ->latest()
             ->get();
 
-        $rows = $affectations->map(fn (BenevoleAffectation $affectation): array => [
-            'id' => $affectation->id,
-            'user' => [
-                'id' => $affectation->user?->id,
-                'name' => $affectation->user?->name,
-                'email' => $affectation->user?->email,
-            ],
-            'poste' => $affectation->poste,
-            'creneau_debut' => optional($affectation->creneau_debut)?->toIso8601String(),
-            'creneau_fin' => optional($affectation->creneau_fin)?->toIso8601String(),
-        ])->all();
+        $stats = [
+            'total'      => $candidatures->count(),
+            'en_attente' => $candidatures->where('statut', 'candidat')->count(),
+            'acceptees'  => $candidatures->where('statut', 'accepte')->count(),
+            'refusees'   => $candidatures->where('statut', 'refuse')->count(),
+        ];
 
-        return Inertia::render('Logistique/Benevoles/Index', [
-            'evenement' => [
-                'id' => $evenement->id,
-                'titre' => $evenement->titre,
-            ],
-            'benevoles' => $rows,
-            'utilisateurs' => User::query()
-                ->orderBy('name')
-                ->get(['id', 'name', 'email'])
-                ->toArray(),
-            'stats' => [
-                'total_benevoles' => $affectations->pluck('user_id')->unique()->count(),
-                'postes_couverts' => $affectations->pluck('poste')->unique()->count(),
-            ],
-            'postes' => $affectations->pluck('poste')->unique()->values()->all(),
+        return Inertia::render('Benevolat/MesCandidatures', [
+            'candidatures' => $candidatures,
+            'stats'        => $stats,
         ]);
     }
 
     /**
-     * Affecte un bénévole à un poste.
+     * Annuler sa propre candidature.
      */
-    public function store(Request $request, Evenement $evenement): RedirectResponse
+    public function annulerCandidature(CandidatureBenevole $candidature): RedirectResponse
     {
-        abort_unless($request->user()?->can('logistique.manage'), 403);
+        $user = Auth::user();
+        abort_unless($candidature->user_id === $user->id, 403);
 
-        $validated = $this->validateAffectation($request);
-        $validated['evenement_id'] = $evenement->id;
+        if (!in_array($candidature->statut, ['candidat', 'accepte'])) {
+            return back()->with('error', 'Cette candidature ne peut plus être annulée.');
+        }
 
-        BenevoleAffectation::query()->create($validated);
+        $candidature->update(['statut' => CandidatureBenevole::STATUT_ANNULE]);
 
-        return back()->with('success', 'Bénévole affecté avec succès.');
+        return back()->with('success', 'Candidature annulée.');
     }
 
-    /**
-     * Met à jour une affectation.
-     */
-    public function update(Request $request, BenevoleAffectation $benevoleAffectation): RedirectResponse
-    {
-        abort_unless($request->user()?->can('logistique.manage'), 403);
-
-        $validated = $this->validateAffectation($request);
-
-        $benevoleAffectation->update($validated);
-
-        return back()->with('success', 'Affectation bénévole mise à jour.');
-    }
+    // ════════════════════════════════════════
+    //   CÔTÉ STAFF
+    // ════════════════════════════════════════
 
     /**
-     * Retire une affectation.
+     * Liste des candidatures pour un poste donné.
      */
-    public function destroy(BenevoleAffectation $benevoleAffectation): RedirectResponse
+    public function listeCandidatures(PosteBenevole $poste): Response
     {
-        abort_unless(request()->user()?->can('logistique.manage'), 403);
+        $this->authorizeStaff($poste);
 
-        $benevoleAffectation->delete();
+        $poste->load([
+            'evenement.typeEvenement',
+            'candidatures.user:id,nom,prenom,email,telephone',
+            'candidatures.valideParUser:id,nom,prenom',
+        ]);
 
-        return back()->with('success', 'Affectation retirée.');
-    }
+        $stats = [
+            'total'         => $poste->candidatures->count(),
+            'en_attente'    => $poste->candidatures->where('statut', 'candidat')->count(),
+            'acceptees'     => $poste->candidatures->where('statut', 'accepte')->count(),
+            'refusees'      => $poste->candidatures->where('statut', 'refuse')->count(),
+            'places_restantes' => $poste->placesRestantes(),
+        ];
 
-    /**
-     * Affiche le planning de rotation des bénévoles.
-     */
-    public function planning(Evenement $evenement): Response
-    {
-        abort_unless(request()->user()?->can('logistique.view'), 403);
-
-        return Inertia::render('Logistique/Benevoles/Planning', [
-            'evenement' => [
-                'id' => $evenement->id,
-                'titre' => $evenement->titre,
-            ],
-            'planning' => $this->volunteerSchedulerService->generatePlanning($evenement->id),
+        return Inertia::render('Benevolat/ListeCandidatures', [
+            'poste' => $poste,
+            'stats' => $stats,
         ]);
     }
 
     /**
-     * @return array<string, mixed>
+     * Accepter une candidature.
      */
-    private function validateAffectation(Request $request): array
+    public function accepter(CandidatureBenevole $candidature): RedirectResponse
     {
-        return $request->validate([
-            'user_id' => ['required', 'exists:users,id'],
-            'poste' => ['required', 'string', 'max:255'],
-            'creneau_debut' => ['required', 'date'],
-            'creneau_fin' => ['required', 'date', 'after:creneau_debut'],
+        $this->authorizeStaff($candidature->poste);
+
+        // Vérifier qu'il reste des places
+        if ($candidature->poste->placesRestantes() <= 0) {
+            return back()->with('error', 'Le poste est complet, impossible d\'accepter plus de candidatures.');
+        }
+
+        DB::transaction(function () use ($candidature) {
+            $candidature->update([
+                'statut'        => CandidatureBenevole::STATUT_ACCEPTE,
+                'valide_par_id' => Auth::id(),
+                'valide_le'     => now(),
+            ]);
+
+            // Si plus de places dispo, fermer le poste
+            if ($candidature->poste->placesRestantes() <= 0) {
+                $candidature->poste->update(['statut' => 'complet']);
+            }
+        });
+
+        return back()->with('success', 'Candidature acceptée. Le bénévole a été notifié.');
+    }
+
+    /**
+     * Refuser une candidature.
+     */
+    public function refuser(Request $request, CandidatureBenevole $candidature): RedirectResponse
+    {
+        $this->authorizeStaff($candidature->poste);
+
+        $request->validate([
+            'motif_refus' => ['required', 'string', 'min:10', 'max:1000'],
         ]);
+
+        $candidature->update([
+            'statut'        => CandidatureBenevole::STATUT_REFUSE,
+            'motif_refus'   => $request->motif_refus,
+            'valide_par_id' => Auth::id(),
+            'valide_le'     => now(),
+        ]);
+
+        return back()->with('success', 'Candidature refusée. Le bénévole a été notifié avec le motif.');
+    }
+
+    // ════════════════════════════════════════
+    //   MÉTHODES PRIVÉES
+    // ════════════════════════════════════════
+
+    private function authorizeStaff(PosteBenevole $poste): void
+    {
+        $user = Auth::user();
+
+        // Admin + Responsable : tout pouvoir
+        if ($user->hasAnyRole(['admin', 'responsable_dcirp'])) {
+            return;
+        }
+
+        // Organisateur : seulement SES événements
+        if ($user->hasRole('organisateur') && $poste->evenement->created_by === $user->id) {
+            return;
+        }
+
+        abort(403, 'Vous ne pouvez gérer que les bénévoles de vos propres événements.');
     }
 }

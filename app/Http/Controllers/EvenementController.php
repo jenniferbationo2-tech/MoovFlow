@@ -46,28 +46,40 @@ class EvenementController extends Controller
         ]);
     }
 
-    /**
-     * Affichage du détail d'un événement.
-     */
+   
     public function show(Evenement $evenement): Response
-    {
-        $evenement->load([
-            'typeEvenement',
-            'lieu',
-            'tarifs',
-        ]);
+{
+    $evenement->load([
+        'typeEvenement',
+        'lieu',
+        'tarifs',
+    ]);
 
-        // Charger les relations optionnelles avec gestion d'erreur
-        try {
-            $evenement->load('objectifsRse');
-        } catch (\Exception $e) {
-            // Relation non existante, on ignore
-        }
-
-        return Inertia::render('Evenements/Show', [
-            'evenement' => $evenement,
-        ]);
+    try {
+        $evenement->load('objectifsRse');
+    } catch (\Exception $e) {
+        // Relation non existante, on ignore
     }
+
+    
+    $postesBenevoles = $evenement->postesBenevoles()
+        ->where('statut', 'ouvert')
+        ->withCount(['candidatures as places_acceptees' => function ($q) {
+            $q->where('statut', 'accepte');
+        }])
+        ->get()
+        ->map(function ($poste) {
+            $poste->places_restantes = max(0, $poste->places_max - $poste->places_acceptees);
+            return $poste;
+        })
+        ->filter(fn ($p) => $p->places_restantes > 0)
+        ->values();
+
+    return Inertia::render('Evenements/Show', [
+        'evenement'       => $evenement,
+        'postesBenevoles' => $postesBenevoles,  // 🆕
+    ]);
+}
 
     /**
      * Affichage du formulaire de création (wizard).

@@ -48,11 +48,22 @@ class HandleInertiaRequests extends Middleware
                     'permissions' => $user->getAllPermissions()->pluck('name')->values()->all(),
                 ] : null,
             ],
-            'flash' => [
-                'success' => fn () => $request->session()->get('success'),
-                'error' => fn () => $request->session()->get('error') ?? $request->session()->get('errors')?->first(),
+
+            'app' => fn() => [
+                'name'        => setting('app_name', 'MoovFlow'),
+                'slogan'      => setting('app_slogan', 'Portail dCIRP'),
+                'logo'        => setting('app_logo')
+                    ? '/storage/' . setting('app_logo')
+                    : null,
+                'tel'         => setting('telephone_moov'),
+                'email'       => setting('email_contact'),
+                'pays'        => setting('pays', 'Burkina Faso'),
             ],
-            'ziggy' => fn () => [
+            'flash' => [
+                'success' => fn() => $request->session()->get('success'),
+                'error' => fn() => $request->session()->get('error') ?? $request->session()->get('errors')?->first(),
+            ],
+            'ziggy' => fn() => [
                 ...(new Ziggy)->toArray(),
                 'location' => $request->url(),
             ],

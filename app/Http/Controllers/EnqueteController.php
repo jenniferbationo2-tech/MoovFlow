@@ -7,284 +7,218 @@ use App\Models\Evenement;
 use App\Models\ReponseEnquete;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class EnqueteController extends Controller
 {
-    /**
-     * Affiche la liste des enquêtes d'un événement.
-     */
+  
     public function index(Evenement $evenement): Response
     {
-        abort_unless(request()->user()?->can('communication.view'), 403);
-
-        $totalParticipants = $evenement->inscriptions()->count();
+        $this->autoriserOrganisateurOuAdmin($evenement);
 
         $enquetes = $evenement->enquetes()
             ->withCount('reponses')
             ->latest()
             ->get()
-            ->map(fn (Enquete $enquete): array => [
-                'id' => $enquete->id,
-                'titre' => $enquete->titre,
-                'type' => $enquete->type,
-                'statut' => $enquete->statut,
-                'questions_count' => count($enquete->questions ?? []),
-                'reponses_count' => $enquete->reponses_count,
-                'taux_reponse' => $totalParticipants > 0 ? round(($enquete->reponses_count / $totalParticipants) * 100, 1) : 0,
-                'created_at' => optional($enquete->created_at)?->toIso8601String(),
-            ])
-            ->all();
+            ->map(fn (Enquete $e) => [
+                'id'           => $e->id,
+                'titre'        => $e->titre,
+                'type'         => $e->type,
+                'statut'       => $e->statut,
+                'nb_questions' => count($e->questions['items'] ?? []),
+                'nb_reponses'  => $e->reponses_count,
+                'created_at'   => $e->created_at->toIso8601String(),
+            ]);
 
-        return Inertia::render('Communication/Enquetes/Index', [
+        return Inertia::render('Enquetes/Index', [
             'evenement' => [
-                'id' => $evenement->id,
-                'titre' => $evenement->titre,
-                'participants_count' => $totalParticipants,
+                'id'         => $evenement->id,
+                'titre'      => $evenement->titre,
+                'date_debut' => $evenement->date_debut?->toIso8601String(),
+                'date_fin'   => $evenement->date_fin?->toIso8601String(),
+                'statut'     => $evenement->statut,
             ],
             'enquetes' => $enquetes,
-            'types' => $this->types(),
         ]);
     }
 
-    /**
-     * Affiche le formulaire de création d'enquête.
-     */
     public function create(Evenement $evenement): Response
     {
-        abort_unless(request()->user()?->can('communication.manage'), 403);
+        $this->autoriserOrganisateurOuAdmin($evenement);
 
-        return Inertia::render('Communication/Enquetes/Create', [
+        return Inertia::render('Enquetes/Create', [
             'evenement' => [
-                'id' => $evenement->id,
+                'id'    => $evenement->id,
                 'titre' => $evenement->titre,
             ],
-            'types' => $this->types(),
-            'questionTypes' => $this->questionTypes(),
+            'typesQuestions' => Enquete::typesQuestions(),
         ]);
     }
 
-    /**
-     * Enregistre une nouvelle enquête.
-     */
+
     public function store(Request $request, Evenement $evenement): RedirectResponse
     {
-        abort_unless($request->user()?->can('communication.manage'), 403);
+        $this->autoriserOrganisateurOuAdmin($evenement);
 
         $validated = $request->validate([
-            'titre' => ['required', 'string', 'max:255'],
-            'type' => ['required', Rule::in(array_column($this->types(), 'value'))],
-            'questions' => ['required', 'array', 'min:1'],
-            'questions.*.id' => ['required', 'string', 'max:100'],
-            'questions.*.label' => ['required', 'string', 'max:255'],
-            'questions.*.type' => ['required', Rule::in(array_column($this->questionTypes(), 'value'))],
-            'questions.*.options' => ['nullable', 'array'],
-            'questions.*.options.*' => ['nullable', 'string', 'max:255'],
+            'titre'                  => ['required', 'string', 'max:255'],
+            'type'                   => ['nullable', 'string', 'max:100'],
+            'items'                  => ['required', 'array', 'min:1'],
+            'items.*.type'           => ['required', 'string', 'in:note,choix_unique,choix_multiple,texte_court,texte_long,oui_non'],
+            'items.*.label'          => ['required', 'string', 'max:500'],
+            'items.*.obligatoire'    => ['nullable', 'boolean'],
+            'items.*.options'        => ['nullable', 'array'],
+            'items.*.options.*'      => ['string', 'max:255'],
+            'items.*.echelle'        => ['nullable', 'integer', 'min:2', 'max:10'],
         ]);
 
-        $enquete = $evenement->enquetes()->create([
-            'titre' => $validated['titre'],
-            'type' => $validated['type'],
-            'questions' => collect($validated['questions'])->map(function (array $question): array {
-                return [
-                    'id' => $question['id'],
-                    'label' => $question['label'],
-                    'type' => $question['type'],
-                    'options' => array_values(array_filter($question['options'] ?? [])),
-                ];
-            })->values()->all(),
-            'statut' => 'brouillon',
+        // Construire le JSON propre des questions
+        $items = collect($validated['items'])->map(function ($item, $index) {
+            $clean = [
+                'id'          => 'q' . ($index + 1),
+                'type'        => $item['type'],
+                'label'       => $item['label'],
+                'obligatoire' => $item['obligatoire'] ?? false,
+            ];
+
+            if (in_array($item['type'], ['choix_unique', 'choix_multiple'])) {
+                $clean['options'] = array_values(array_filter($item['options'] ?? [], fn ($o) => trim($o) !== ''));
+            }
+
+            if ($item['type'] === 'note') {
+                $clean['echelle'] = $item['echelle'] ?? 5;
+            }
+
+            return $clean;
+        })->toArray();
+
+        $enquete = Enquete::create([
+            'evenement_id' => $evenement->id,
+            'titre'        => $validated['titre'],
+            'type'         => $validated['type'] ?? 'satisfaction',
+            'questions'    => ['version' => '1.0', 'items' => $items],
+            'statut'       => 'brouillon',
         ]);
 
         return redirect()
-            ->route('communication.enquetes.show', ['evenement' => $evenement->id, 'enquete' => $enquete->id])
-            ->with('success', 'Enquête créée avec succès.');
+            ->route('communication.enquetes.show', [$evenement, $enquete])
+            ->with('success', 'Enquête créée en brouillon. Pensez à la publier.');
     }
 
-    /**
-     * Affiche le détail d'une enquête avec statistiques.
-     */
     public function show(Evenement $evenement, Enquete $enquete): Response
     {
-        abort_unless(request()->user()?->can('communication.view'), 403);
+        $user = Auth::user();
 
-        $enquete->load(['evenement', 'reponses.user:id,name,email']);
-        $participantsCount = $enquete->evenement?->inscriptions()->count() ?? 0;
-        $reponses = $enquete->reponses;
+        // 2 cas : organisateur/admin OU participant
+        $estOrganisateurOuAdmin = $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']);
 
-        return Inertia::render('Communication/Enquetes/Show', [
+        // Données communes
+        $data = [
+            'evenement' => [
+                'id'    => $evenement->id,
+                'titre' => $evenement->titre,
+            ],
             'enquete' => [
-                'id' => $enquete->id,
-                'titre' => $enquete->titre,
-                'type' => $enquete->type,
-                'statut' => $enquete->statut,
-                'questions' => $enquete->questions ?? [],
-                'evenement' => [
-                    'id' => $enquete->evenement?->id,
-                    'titre' => $enquete->evenement?->titre,
-                ],
+                'id'        => $enquete->id,
+                'titre'     => $enquete->titre,
+                'type'      => $enquete->type,
+                'statut'    => $enquete->statut,
+                'questions' => $enquete->questions,
             ],
-            'stats' => [
-                'nb_reponses' => $reponses->count(),
-                'participants_count' => $participantsCount,
-                'taux_reponse' => $participantsCount > 0 ? round(($reponses->count() / $participantsCount) * 100, 1) : 0,
-            ],
-            'chartData' => $this->buildChartData($enquete, $reponses->all()),
-            'responses' => $reponses->map(fn (ReponseEnquete $reponse): array => [
-                'id' => $reponse->id,
-                'user' => [
-                    'name' => $reponse->user?->name,
-                    'email' => $reponse->user?->email,
-                ],
-                'reponses' => $reponse->reponses,
-                'created_at' => optional($reponse->created_at)?->toIso8601String(),
-            ])->all(),
-        ]);
+            'isManager'      => $estOrganisateurOuAdmin,
+            'aDejaRepondu'   => $enquete->aDejaRepondu($user->id),
+        ];
+
+        // Pour les managers, on ajoute les statistiques
+        if ($estOrganisateurOuAdmin) {
+            $data['stats'] = [
+                'nb_reponses' => $enquete->reponses()->count(),
+            ];
+        }
+
+        return Inertia::render('Enquetes/Show', $data);
     }
 
-    /**
-     * Soumet ou met à jour la réponse d'un utilisateur à une enquête.
-     */
-    public function respond(Request $request, Evenement $evenement, Enquete $enquete): RedirectResponse
+  
+    public function respond(Request $request, Enquete $enquete): RedirectResponse
     {
-        abort_unless(
-            $request->user()?->can('communication.view') || $request->user()?->hasRole('participant'),
-            403
-        );
+        // Seules les enquêtes publiées sont répondables
+        if ($enquete->statut !== 'publie') {
+            return back()->withErrors(['enquete' => 'Cette enquête n\'est pas ouverte aux réponses.']);
+        }
+
+        $user = Auth::user();
+
+        // Pas de double réponse
+        if ($enquete->aDejaRepondu($user->id)) {
+            return back()->withErrors(['enquete' => 'Vous avez déjà répondu à cette enquête.']);
+        }
 
         $validated = $request->validate([
             'reponses' => ['required', 'array'],
         ]);
 
-        ReponseEnquete::query()->updateOrCreate(
-            [
-                'enquete_id' => $enquete->id,
-                'user_id' => $request->user()->id,
-            ],
-            [
-                'reponses' => $validated['reponses'],
-            ]
+        // Vérifier les questions obligatoires
+        $items = $enquete->questions['items'] ?? [];
+        foreach ($items as $item) {
+            if (($item['obligatoire'] ?? false) && empty($validated['reponses'][$item['id']])) {
+                return back()->withErrors([
+                    'reponses' => "La question \"{$item['label']}\" est obligatoire.",
+                ]);
+            }
+        }
+
+        ReponseEnquete::create([
+            'enquete_id' => $enquete->id,
+            'user_id'    => $user->id,
+            'reponses'   => $validated['reponses'],
+        ]);
+
+        return redirect()
+            ->route('communication.enquetes.show', [$enquete->evenement_id, $enquete])
+            ->with('success', 'Merci pour votre retour ! Votre réponse a bien été enregistrée.');
+    }
+
+    public function publish(Enquete $enquete): RedirectResponse
+    {
+        $this->autoriserOrganisateurOuAdmin($enquete->evenement);
+
+        if ($enquete->statut !== 'brouillon') {
+            return back()->withErrors(['statut' => 'Seules les enquêtes en brouillon peuvent être publiées.']);
+        }
+
+        $enquete->update(['statut' => 'publie']);
+
+        return back()->with('success', 'Enquête publiée. Les participants peuvent maintenant y répondre.');
+    }
+
+    
+    public function close(Enquete $enquete): RedirectResponse
+    {
+        $this->autoriserOrganisateurOuAdmin($enquete->evenement);
+
+        if ($enquete->statut !== 'publie') {
+            return back()->withErrors(['statut' => 'Seules les enquêtes publiées peuvent être clôturées.']);
+        }
+
+        $enquete->update(['statut' => 'cloture']);
+
+        return back()->with('success', 'Enquête clôturée. Plus de nouvelles réponses possibles.');
+    }
+
+    
+    private function autoriserOrganisateurOuAdmin(Evenement $evenement): void
+    {
+        $user = Auth::user();
+
+        abort_unless(
+            $user->hasAnyRole(['admin', 'responsable_dcirp']) ||
+                ($user->hasRole('organisateur') && $evenement->created_by === $user->id),
+            403,
+            'Vous n\'avez pas accès à cet événement.'
         );
-
-        return back()->with('success', 'Votre réponse a été enregistrée.');
-    }
-
-    /**
-     * Publie une enquête.
-     */
-    public function publish(Evenement $evenement, Enquete $enquete): RedirectResponse
-    {
-        abort_unless(request()->user()?->can('communication.manage'), 403);
-
-        $enquete->update([
-            'statut' => 'publie',
-        ]);
-
-        return back()->with('success', 'Enquête publiée avec succès.');
-    }
-
-    /**
-     * Clôture une enquête.
-     */
-    public function close(Evenement $evenement, Enquete $enquete): RedirectResponse
-    {
-        abort_unless(request()->user()?->can('communication.manage'), 403);
-
-        $enquete->update([
-            'statut' => 'cloture',
-        ]);
-
-        return back()->with('success', 'Enquête clôturée avec succès.');
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function buildChartData(Enquete $enquete, array $reponses): array
-    {
-        return collect($enquete->questions ?? [])->map(function (array $question) use ($reponses): array {
-            $values = collect($reponses)->map(function (ReponseEnquete $reponse) use ($question) {
-                return data_get($reponse->reponses, $question['id']);
-            })->filter(fn ($value) => $value !== null && $value !== '');
-
-            if (($question['type'] ?? null) === 'choix_multiple') {
-                $counts = $values
-                    ->countBy()
-                    ->map(fn ($count, $label) => ['label' => $label, 'value' => $count])
-                    ->values()
-                    ->all();
-
-                return [
-                    'question_id' => $question['id'],
-                    'label' => $question['label'],
-                    'type' => 'pie',
-                    'labels' => array_column($counts, 'label'),
-                    'datasets' => [
-                        [
-                            'label' => $question['label'],
-                            'backgroundColor' => ['#0066B3', '#00A651', '#F59E0B', '#8B5CF6', '#EF4444'],
-                            'data' => array_column($counts, 'value'),
-                        ],
-                    ],
-                ];
-            }
-
-            if (($question['type'] ?? null) === 'note') {
-                $counts = $values
-                    ->map(fn ($value) => (string) $value)
-                    ->countBy()
-                    ->sortKeys()
-                    ->map(fn ($count, $label) => ['label' => $label, 'value' => $count])
-                    ->values()
-                    ->all();
-
-                return [
-                    'question_id' => $question['id'],
-                    'label' => $question['label'],
-                    'type' => 'bar',
-                    'labels' => array_column($counts, 'label'),
-                    'datasets' => [
-                        [
-                            'label' => $question['label'],
-                            'backgroundColor' => '#0066B3',
-                            'data' => array_column($counts, 'value'),
-                        ],
-                    ],
-                ];
-            }
-
-            return [
-                'question_id' => $question['id'],
-                'label' => $question['label'],
-                'type' => 'text',
-                'entries' => $values->values()->all(),
-            ];
-        })->all();
-    }
-
-    /**
-     * @return array<int, array<string, string>>
-     */
-    private function types(): array
-    {
-        return [
-            ['value' => 'sondage', 'label' => 'Sondage'],
-            ['value' => 'feedback', 'label' => 'Feedback'],
-            ['value' => 'evaluation', 'label' => 'Évaluation'],
-        ];
-    }
-
-    /**
-     * @return array<int, array<string, string>>
-     */
-    private function questionTypes(): array
-    {
-        return [
-            ['value' => 'texte', 'label' => 'Texte libre'],
-            ['value' => 'choix_multiple', 'label' => 'Choix multiple'],
-            ['value' => 'note', 'label' => 'Note'],
-        ];
     }
 }

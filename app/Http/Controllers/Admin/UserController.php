@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Evenement;
+use Carbon\Carbon;
+use Spatie\Activitylog\Models\Activity;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -172,5 +175,171 @@ class UserController extends Controller
         ]);
 
         return back()->with('success', "Mot de passe de {$user->prenom} {$user->nom} réinitialisé.");
+    }
+
+
+    public function show(User $user): Response
+    {
+        Gate::authorize('manage-users');
+
+        // Charger les rôles
+        $user->load('roles');
+
+        $activitesRecentes = Activity::where(function ($q) use ($user) {
+                $q->where(function ($sub) use ($user) {
+                    $sub->where('subject_type', User::class)
+                        ->where('subject_id', $user->id);
+                })->orWhere('causer_id', $user->id);
+            })
+            ->latest()
+            ->take(20)
+            ->get()
+            ->map(fn ($a) => [
+                'id'               => $a->id,
+                'log_name'         => $a->log_name,
+                'event'            => $a->event,
+                'description'      => $a->description,
+                'subject_type'     => $a->subject_type ? class_basename($a->subject_type) : null,
+                'subject_id'       => $a->subject_id,
+                'created_at'       => $a->created_at->toIso8601String(),
+                'created_at_human' => $a->created_at->locale('fr')->diffForHumans(),
+                'is_causer'        => $a->causer_id === $user->id,
+            ]);
+
+        $connexions = Activity::where('causer_id', $user->id)
+            ->where('log_name', 'request')
+            ->where(function ($q) {
+                $q->where('properties->url', 'like', '%/login%')
+                  ->orWhere('properties->route', 'like', '%login%');
+            })
+            ->latest()
+            ->take(15)
+            ->get()
+            ->map(fn ($a) => [
+                'id'         => $a->id,
+                'created_at' => $a->created_at->toIso8601String(),
+                'created_at_human' => $a->created_at->locale('fr')->diffForHumans(),
+                'ip'         => $a->properties['ip'] ?? '—',
+                'method'     => strtoupper($a->properties['method'] ?? '—'),
+                'status'     => $a->properties['status'] ?? null,
+                'url'        => $a->properties['url'] ?? '—',
+                'reussie'    => in_array($a->properties['status'] ?? 0, [200, 302]),
+            ]);
+
+        // ─── ÉVÉNEMENTS CRÉÉS ───
+        $evenementsCrees = Evenement::where('created_by', $user->id)
+            ->with(['typeEvenement:id,nom,code', 'lieu:id,nom'])
+            ->withCount('inscriptions')
+            ->latest()
+            ->take(10)
+            ->get()
+            ->map(fn ($e) => [
+                'id'                 => $e->id,
+                'titre'              => $e->titre,
+                'statut'             => $e->statut,
+                'date_debut'         => $e->date_debut?->toIso8601String(),
+                'type_nom'           => $e->typeEvenement?->nom,
+                'type_code'          => $e->typeEvenement?->code,
+                'lieu_nom'           => $e->lieu?->nom,
+                'inscriptions_count' => $e->inscriptions_count,
+            ]);
+
+        $kpis = [
+            'total_activites' => Activity::where(function ($q) use ($user) {
+                                    $q->where('causer_id', $user->id)
+                                      ->orWhere(function ($sub) use ($user) {
+                                          $sub->where('subject_type', User::class)
+                                              ->where('subject_id', $user->id);
+                                      });
+                                })->count(),
+
+            'total_connexions' => Activity::where('causer_id', $user->id)
+                                          ->where('log_name', 'request')
+                                          ->where(function ($q) {
+                                              $q->where('properties->url', 'like', '%/login%')
+                                                ->orWhere('properties->route', 'like', '%login%');
+                                          })
+                                          ->count(),
+
+            'connexions_echec' => Activity::where('causer_id', $user->id)
+                                          ->where('log_name', 'request')
+                                          ->where(function ($q) {
+                                              $q->where('properties->url', 'like', '%/login%')
+                                                ->orWhere('properties->route', 'like', '%login%');
+                                          })
+                                          ->whereNotIn('properties->status', [200, 302])
+                                          ->count(),
+
+            'evenements_crees' => Evenement::where('created_by', $user->id)->count(),
+
+            'jours_anciennete' => $user->created_at
+                                    ? Carbon::parse($user->created_at)->diffInDays(now())
+                                    : 0,
+        ];
+
+        return Inertia::render('Admin/Users/Show', [
+            'user' => [
+                'id'                   => $user->id,
+                'nom'                  => $user->nom,
+                'prenom'               => $user->prenom,
+                'email'                => $user->email,
+                'telephone'            => $user->telephone,
+                'is_active'            => (bool) $user->is_active,
+                'bloque_jusqu_a'       => $user->bloque_jusqu_a?->toIso8601String(),
+                'tentatives_connexion' => $user->tentatives_connexion ?? 0,
+                'created_at'           => $user->created_at?->toIso8601String(),
+                'deleted_at'           => $user->deleted_at?->toIso8601String(),
+                'roles'                => $user->roles->pluck('name')->all(),
+            ],
+            'activites'        => $activitesRecentes,
+            'connexions'       => $connexions,
+            'evenementsCrees'  => $evenementsCrees,
+            'kpis'             => $kpis,
+        ]);
+    }
+
+
+    public function destroy(User $user): RedirectResponse
+    {
+        Gate::authorize('manage-users');
+
+        // Sécurité : ne pas se supprimer soi-même
+        if ($user->id === auth()->id()) {
+            return back()->withErrors([
+                'delete' => 'Vous ne pouvez pas supprimer votre propre compte.',
+            ]);
+        }
+
+        // Sécurité : ne pas supprimer le dernier admin
+        if ($user->hasRole('admin')) {
+            $autresAdmins = User::role('admin')->where('id', '!=', $user->id)->count();
+            if ($autresAdmins === 0) {
+                return back()->withErrors([
+                    'delete' => 'Impossible de supprimer le dernier administrateur.',
+                ]);
+            }
+        }
+
+        $nom = "{$user->prenom} {$user->nom}";
+        $user->delete(); // soft delete
+
+        return redirect()->route('admin.users.index')
+            ->with('success', "Compte de {$nom} archivé. Les logs sont conservés.");
+    }
+
+    
+    public function restore(int $id): RedirectResponse
+    {
+        Gate::authorize('manage-users');
+
+        $user = User::withTrashed()->findOrFail($id);
+
+        if (!$user->trashed()) {
+            return back()->withErrors(['restore' => 'Cet utilisateur n\'est pas archivé.']);
+        }
+
+        $user->restore();
+
+        return back()->with('success', "Compte de {$user->prenom} {$user->nom} restauré.");
     }
 }

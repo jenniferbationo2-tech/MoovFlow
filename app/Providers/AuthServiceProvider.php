@@ -31,6 +31,7 @@ class AuthServiceProvider extends ServiceProvider
 
         Gate::define('rapports.viewAny', [RapportPolicy::class, 'viewAny']);
         Gate::define('rapports.export', [RapportPolicy::class, 'export']);
-        Gate::define('manage-users', fn ($user) => $user->hasRole('admin'));
+        Gate::define('manage-users', fn($user) => $user->hasAnyRole(['admin', 'responsable_dcirp']));
+        Gate::define('view-audit', fn($user) => $user->hasAnyRole(['admin', 'responsable_dcirp']));
     }
 }

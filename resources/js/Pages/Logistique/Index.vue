@@ -1,537 +1,712 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { Link, useForm, router } from '@inertiajs/vue3'
+import { Link, router, useForm } from '@inertiajs/vue3'
 import DashboardLayout from '@/Layouts/DashboardLayout.vue'
 
 const props = defineProps({
-    evenement:  Object,
-    ressources: Array,
-    dotations:  Array,
-    benevoles:  Array,
+    lieux:                  { type: Array, required: true },
+    materiels:              { type: Array, required: true },
+    prestataires:           { type: Array, required: true },
+    postes:                 { type: Array, required: true },
+    categoriesMateriel:     { type: Object, required: true },
+    etatsMateriel:          { type: Object, required: true },
+    categoriesPrestataire:  { type: Object, required: true },
+    kpis:                   { type: Object, required: true },
+    permissions:            { type: Object, required: true },
 })
 
-// ── ONGLETS ──────────────────────────────
-const ongletActif = ref('ressources')
+// ═════════ ONGLETS ═════════
+const ongletActif = ref('lieux')
+
 const onglets = [
-    { value: 'ressources', label: 'Ressources & Matériel' },
-    { value: 'dotations',  label: 'Dotations' },
-    { value: 'benevoles',  label: 'Bénévoles' },
+    { key: 'lieux',         label: 'Salles & Espaces',  icon: 'pin' },
+    { key: 'materiels',     label: 'Matériel',           icon: 'screen' },
+    { key: 'prestataires',  label: 'Prestataires',       icon: 'truck' },
+    { key: 'benevoles',     label: 'Bénévoles',          icon: 'users' },
 ]
 
-// ── HELPERS ──────────────────────────────
-const formaterDate = (d) => {
-    if (!d) return '—'
-    return new Date(d).toLocaleDateString('fr-FR', {
-        day: '2-digit', month: 'short', year: 'numeric'
-    })
+// ═════════ MODALES ═════════
+const modaleOuverte = ref(null) // 'lieu' | 'materiel' | 'prestataire' | null
+
+const ouvrirModale = (type) => {
+    modaleOuverte.value = type
+    // Reset les forms
+    if (type === 'lieu') formLieu.reset()
+    if (type === 'materiel') formMateriel.reset()
+    if (type === 'prestataire') formPrestataire.reset()
 }
 
-const baseUrl = computed(() => `/evenements/${props.evenement.id}/logistique-v2`)
+const fermerModale = () => {
+    modaleOuverte.value = null
+}
 
-// ════════════════════════════════════════
-//   RESSOURCES
-// ════════════════════════════════════════
-const modalRessourceOuvert = ref(false)
-const formRessource = useForm({
-    nom: '', type: 'materiel', quantite_totale: 1, unite: '',
-    cout_unitaire: 0, fournisseur: '', observations: '',
+// ═════════ FORMS ═════════
+
+const formLieu = useForm({
+    nom: '', adresse: '', ville: '', capacite_max: '', description: '', actif: true,
 })
 
-const ouvrirModalRessource = () => {
-    formRessource.reset()
-    formRessource.type = 'materiel'
-    modalRessourceOuvert.value = true
-}
+const formMateriel = useForm({
+    nom: '', categorie: '', description: '', quantite_totale: '',
+    unite: 'pièce', etat: 'bon', lieu_stockage: '',
+})
 
-const creerRessource = () => {
-    formRessource.post(`${baseUrl.value}/ressources`, {
-        onSuccess: () => modalRessourceOuvert.value = false,
+const formPrestataire = useForm({
+    nom: '', categorie: '', contact_nom: '', email: '', telephone: '',
+    ville: '', description: '', note_interne: '', actif: true,
+})
+
+// ═════════ SUBMITS ═════════
+
+const creerLieu = () => {
+    formLieu.post('/lieux', {
+        onSuccess: () => fermerModale(),
         preserveScroll: true,
     })
 }
 
-const supprimerRessource = (r) => {
-    if (confirm(`Supprimer "${r.nom}" de l'inventaire ?`)) {
-        router.delete(`${baseUrl.value}/ressources/${r.id}`)
-    }
-}
-
-// ════════════════════════════════════════
-//   DOTATIONS
-// ════════════════════════════════════════
-const modalDotationOuvert = ref(false)
-const formDotation = useForm({
-    beneficiaire: '', item: '', quantite: 1, taille: '', a_retourner: false,
-})
-
-const ouvrirModalDotation = () => {
-    formDotation.reset()
-    modalDotationOuvert.value = true
-}
-
-const creerDotation = () => {
-    formDotation.post(`${baseUrl.value}/dotations`, {
-        onSuccess: () => modalDotationOuvert.value = false,
+const creerMateriel = () => {
+    formMateriel.post('/materiels', {
+        onSuccess: () => fermerModale(),
         preserveScroll: true,
     })
 }
 
-const marquerRetour = (d) => {
-    if (confirm(`Confirmer le retour de "${d.item}" par ${d.beneficiaire} ?`)) {
-        router.patch(`${baseUrl.value}/dotations/${d.id}/return`)
-    }
-}
-
-const supprimerDotation = (d) => {
-    if (confirm('Supprimer cette dotation ?')) {
-        router.delete(`${baseUrl.value}/dotations/${d.id}`)
-    }
-}
-
-// ════════════════════════════════════════
-//   BÉNÉVOLES
-// ════════════════════════════════════════
-const modalBenevoleOuvert = ref(false)
-const formBenevole = useForm({
-    nom: '', prenom: '', email: '', telephone: '',
-    poste_affecte: '', horaires: '',
-})
-
-const ouvrirModalBenevole = () => {
-    formBenevole.reset()
-    modalBenevoleOuvert.value = true
-}
-
-const creerBenevole = () => {
-    formBenevole.post(`${baseUrl.value}/benevoles`, {
-        onSuccess: () => modalBenevoleOuvert.value = false,
+const creerPrestataire = () => {
+    formPrestataire.post('/prestataires', {
+        onSuccess: () => fermerModale(),
         preserveScroll: true,
     })
 }
 
-const supprimerBenevole = (b) => {
-    if (confirm(`Retirer ${b.prenom} ${b.nom} de l'équipe bénévole ?`)) {
-        router.delete(`${baseUrl.value}/benevoles/${b.id}`)
+// ═════════ SUPPRESSION ═════════
+
+const supprimer = (type, item) => {
+    const labels = {
+        lieu: 'ce lieu',
+        materiel: 'ce matériel',
+        prestataire: 'ce prestataire',
     }
+    if (!confirm(`Supprimer ${labels[type]} : "${item.nom}" ?`)) return
+
+    const urls = {
+        lieu: `/lieux/${item.id}`,
+        materiel: `/materiels/${item.id}`,
+        prestataire: `/prestataires/${item.id}`,
+    }
+    router.delete(urls[type], { preserveScroll: true })
 }
 
-const couleurStatutDotation = (statut) => ({
-    distribue: { bg: 'bg-emerald-50', text: 'text-emerald-700', label: 'Distribué' },
-    retourne:  { bg: 'bg-blue-50', text: 'text-blue-700', label: 'Retourné' },
-    perdu:     { bg: 'bg-red-50', text: 'text-red-700', label: 'Perdu' },
-}[statut] || { bg: 'bg-slate-100', text: 'text-slate-600', label: statut })
+// ═════════ HELPERS UI ═════════
 
-const initiales = (b) => `${b.prenom?.[0] ?? ''}${b.nom?.[0] ?? ''}`.toUpperCase()
+const labelEtatMateriel = (etat) => props.etatsMateriel[etat] ?? etat
+const labelCategorieMateriel = (cat) => props.categoriesMateriel[cat] ?? cat
+const labelCategoriePrestataire = (cat) => props.categoriesPrestataire[cat] ?? cat
+
+const couleurEtatMateriel = (etat) => ({
+    neuf:  { bg: 'bg-emerald-50', text: 'text-emerald-700' },
+    bon:   { bg: 'bg-blue-50',    text: 'text-blue-700' },
+    usage: { bg: 'bg-amber-50',   text: 'text-amber-700' },
+    hs:    { bg: 'bg-rose-50',    text: 'text-rose-700' },
+}[etat] || { bg: 'bg-slate-50', text: 'text-slate-700' })
+
+const statutLieu = (lieu) => {
+    if (!lieu.actif) return { label: 'Inactif', bg: 'bg-slate-100', text: 'text-slate-700' }
+    return { label: 'Disponible', bg: 'bg-emerald-50', text: 'text-emerald-700' }
+}
+
+const statutPoste = (poste) => ({
+    ouvert:  { label: 'Ouvert',  bg: 'bg-emerald-50', text: 'text-emerald-700' },
+    ferme:   { label: 'Fermé',   bg: 'bg-slate-100',  text: 'text-slate-700' },
+    complet: { label: 'Complet', bg: 'bg-blue-50',    text: 'text-blue-700' },
+}[poste.statut] || { label: poste.statut, bg: 'bg-slate-100', text: 'text-slate-700' })
 </script>
 
 <template>
     <DashboardLayout>
 
-        <!-- ── EN-TÊTE ── -->
+        <!-- En-tête -->
         <div class="mb-6">
-            <Link :href="`/evenements/${evenement.id}`"
-                  class="inline-flex items-center gap-2 text-sm font-semibold text-text-sub hover:text-moov-blue">
-                ← Retour à l'événement
-            </Link>
-
-            <div class="mt-4">
-                <h1 class="font-display text-3xl font-extrabold text-text-main">Logistique</h1>
-                <p class="mt-1 text-sm text-text-sub">
-                    {{ evenement.titre }}
-                    <span v-if="evenement.lieu"> · {{ evenement.lieu.nom }}</span>
-                </p>
-            </div>
+            <h1 class="font-display text-2xl font-extrabold text-text-main sm:text-3xl">
+                Gestion Logistique
+            </h1>
+            <p class="mt-1 text-sm text-text-sub">
+                Gérez les ressources, les espaces et les équipes pour vos événements.
+            </p>
         </div>
 
-        <!-- ── KPIs ── -->
-        <div class="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-            <div class="rounded-xl bg-card p-4 shadow-card">
-                <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Ressources</p>
-                <p class="mt-2 font-display text-2xl font-extrabold text-moov-blue">
-                    {{ ressources?.length ?? 0 }}
-                </p>
-            </div>
-            <div class="rounded-xl bg-card p-4 shadow-card">
-                <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Dotations</p>
-                <p class="mt-2 font-display text-2xl font-extrabold text-orange-600">
-                    {{ dotations?.length ?? 0 }}
-                </p>
-            </div>
-            <div class="rounded-xl bg-card p-4 shadow-card">
-                <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Bénévoles</p>
-                <p class="mt-2 font-display text-2xl font-extrabold text-amber-600">
-                    {{ benevoles?.length ?? 0 }}
-                </p>
-            </div>
-            <div class="rounded-xl bg-card p-4 shadow-card">
-                <p class="text-xs font-bold uppercase tracking-wider text-text-muted">À retourner</p>
-                <p class="mt-2 font-display text-2xl font-extrabold text-violet-600">
-                    {{ dotations?.filter(d => d.a_retourner && d.statut === 'distribue').length ?? 0 }}
-                </p>
-            </div>
-        </div>
+        <!-- ═════════ ONGLETS ═════════ -->
+        <div class="rounded-2xl bg-white shadow-card">
 
-        <!-- ── ONGLETS ── -->
-        <div class="mb-6 border-b border-border-soft">
-            <nav class="flex gap-1">
-                <button v-for="o in onglets" :key="o.value"
-                        @click="ongletActif = o.value"
-                        :class="['rounded-t-lg px-5 py-3 text-sm font-bold transition',
-                            ongletActif === o.value
-                                ? 'bg-card text-moov-blue border-2 border-b-0 border-border-soft'
-                                : 'text-text-sub hover:text-moov-blue']">
-                    {{ o.label }}
-                </button>
-            </nav>
-        </div>
+            <div class="border-b border-border-soft">
+                <nav class="flex flex-wrap gap-1 px-2 sm:px-4">
+                    <button v-for="o in onglets" :key="o.key"
+                            @click="ongletActif = o.key"
+                            :class="['flex items-center gap-2 border-b-2 px-4 py-4 text-sm font-bold transition',
+                                ongletActif === o.key
+                                    ? 'border-moov-blue text-moov-blue'
+                                    : 'border-transparent text-text-sub hover:text-text-main']">
 
-        
-        <div v-show="ongletActif === 'ressources'" class="space-y-4">
-            <div class="flex items-center justify-between">
-                <h2 class="font-display text-xl font-bold text-text-main">Inventaire matériel</h2>
-                <button @click="ouvrirModalRessource"
-                        class="rounded-lg bg-moov-noir px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-moov-noir-soft">
-                    + Nouvelle Ressource
-                </button>
+                        <!-- Icônes SVG -->
+                        <svg v-if="o.icon === 'pin'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0L6.343 16.657a8 8 0 1111.314 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                        <svg v-else-if="o.icon === 'screen'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                        </svg>
+                        <svg v-else-if="o.icon === 'truck'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1"/>
+                        </svg>
+                        <svg v-else-if="o.icon === 'users'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                        </svg>
+
+                        {{ o.label }}
+                    </button>
+                </nav>
             </div>
 
-            <div v-if="ressources?.length" class="overflow-hidden rounded-xl bg-card shadow-card">
-                <table class="min-w-full divide-y divide-border-soft text-sm">
-                    <thead class="bg-page-bg/50">
-                        <tr>
-                            <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-text-sub">Ressource</th>
-                            <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-text-sub">Type</th>
-                            <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-text-sub">Quantité</th>
-                            <th class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider text-text-sub">Coût total</th>
-                            <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-text-sub">Fournisseur</th>
-                            <th class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider text-text-sub">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-border-soft bg-card">
-                        <tr v-for="r in ressources" :key="r.id" class="transition hover:bg-page-bg/50">
-                            <td class="px-4 py-3">
-                                <p class="font-bold text-text-main">{{ r.nom }}</p>
-                                <p v-if="r.observations" class="text-xs text-text-sub">{{ r.observations }}</p>
-                            </td>
-                            <td class="px-4 py-3">
-                                <span class="rounded bg-blue-50 px-2 py-0.5 text-xs font-bold uppercase text-blue-700">
-                                    {{ r.type }}
-                                </span>
-                            </td>
-                            <td class="px-4 py-3 text-center">
-                                <span class="font-display text-lg font-extrabold text-moov-blue">
-                                    {{ r.quantite_totale }}
-                                </span>
-                                <span v-if="r.unite" class="ml-1 text-xs text-text-sub">{{ r.unite }}</span>
-                            </td>
-                            <td class="px-4 py-3 text-right font-bold text-text-main">
-                                {{ Number(r.cout_unitaire * r.quantite_totale).toLocaleString('fr-FR') }}
-                                <span class="text-xs text-text-sub">FCFA</span>
-                            </td>
-                            <td class="px-4 py-3 text-text-sub">{{ r.fournisseur ?? '—' }}</td>
-                            <td class="px-4 py-3 text-right">
-                                <button @click="supprimerRessource(r)"
-                                        class="rounded p-1.5 text-text-muted transition hover:bg-red-50 hover:text-red-600">
-                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/>
+            <!-- ═════════ CONTENU ONGLET : LIEUX ═════════ -->
+            <div v-if="ongletActif === 'lieux'" class="p-5 sm:p-6">
+
+                <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <p class="text-sm font-bold text-text-sub">
+                        {{ lieux.length }} salle(s) & espace(s) au catalogue
+                    </p>
+                    <button v-if="permissions.peut_creer" @click="ouvrirModale('lieu')"
+                            class="rounded-lg bg-moov-noir px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-moov-noir-soft">
+                        + Ajouter un lieu
+                    </button>
+                </div>
+
+                <div v-if="lieux.length > 0" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div v-for="lieu in lieux" :key="lieu.id"
+                         class="rounded-xl border border-border-soft bg-white p-5 transition hover:shadow-card">
+
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div class="min-w-0 flex-1">
+                                <h3 class="font-display text-base font-extrabold text-text-main">
+                                    {{ lieu.nom }}
+                                </h3>
+                                <p v-if="lieu.capacite_max" class="mt-1 flex items-center gap-1.5 text-xs text-text-sub">
+                                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
                                     </svg>
-                                </button>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <div v-else class="rounded-xl border-2 border-dashed border-border-soft py-12 text-center">
-                <p class="font-bold text-text-main">Aucune ressource enregistrée</p>
-                <p class="mt-1 text-sm text-text-sub">Commencez par lister votre matériel</p>
-            </div>
-        </div>
-
-        <div v-show="ongletActif === 'dotations'" class="space-y-4">
-            <div class="flex items-center justify-between">
-                <h2 class="font-display text-xl font-bold text-text-main">Dotations distribuées</h2>
-                <button @click="ouvrirModalDotation"
-                        class="rounded-lg bg-moov-noir px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-moov-noir-soft">
-                    + Nouvelle Dotation
-                </button>
-            </div>
-
-            <div v-if="dotations?.length" class="overflow-hidden rounded-xl bg-card shadow-card">
-                <table class="min-w-full divide-y divide-border-soft text-sm">
-                    <thead class="bg-page-bg/50">
-                        <tr>
-                            <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-text-sub">Bénéficiaire</th>
-                            <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-text-sub">Item</th>
-                            <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-text-sub">Qté</th>
-                            <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-text-sub">Date remise</th>
-                            <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-text-sub">Statut</th>
-                            <th class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider text-text-sub">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-border-soft bg-card">
-                        <tr v-for="d in dotations" :key="d.id" class="transition hover:bg-page-bg/50">
-                            <td class="px-4 py-3 font-bold text-text-main">{{ d.beneficiaire }}</td>
-                            <td class="px-4 py-3">
-                                <p class="text-text-main">{{ d.item }}</p>
-                                <p v-if="d.taille" class="text-xs text-text-sub">Taille : {{ d.taille }}</p>
-                            </td>
-                            <td class="px-4 py-3 text-center font-bold text-moov-blue">{{ d.quantite }}</td>
-                            <td class="px-4 py-3 text-text-sub">{{ formaterDate(d.date_remise) }}</td>
-                            <td class="px-4 py-3">
-                                <div class="flex flex-col gap-1">
-                                    <span :class="['inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-bold',
-                                        couleurStatutDotation(d.statut).bg, couleurStatutDotation(d.statut).text]">
-                                        {{ couleurStatutDotation(d.statut).label }}
-                                    </span>
-                                    <span v-if="d.a_retourner && d.statut === 'distribue'"
-                                          class="rounded bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700 w-fit">
-                                        À retourner
-                                    </span>
-                                </div>
-                            </td>
-                            <td class="px-4 py-3">
-                                <div class="flex justify-end gap-1">
-                                    <button v-if="d.a_retourner && d.statut === 'distribue'"
-                                            @click="marquerRetour(d)"
-                                            class="rounded p-1.5 text-text-sub transition hover:bg-blue-50 hover:text-blue-600"
-                                            title="Marquer comme retourné">
-                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
-                                        </svg>
-                                    </button>
-                                    <button @click="supprimerDotation(d)"
-                                            class="rounded p-1.5 text-text-muted transition hover:bg-red-50 hover:text-red-600">
-                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/>
-                                        </svg>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <div v-else class="rounded-xl border-2 border-dashed border-border-soft py-12 text-center">
-                <p class="font-bold text-text-main">Aucune dotation enregistrée</p>
-                <p class="mt-1 text-sm text-text-sub">Distribuez du matériel aux participants</p>
-            </div>
-        </div>
-
-      
-        <div v-show="ongletActif === 'benevoles'" class="space-y-4">
-            <div class="flex items-center justify-between">
-                <h2 class="font-display text-xl font-bold text-text-main">Équipe bénévole</h2>
-                <button @click="ouvrirModalBenevole"
-                        class="rounded-lg bg-moov-noir px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-moov-noir-soft">
-                    + Nouveau Bénévole
-                </button>
-            </div>
-
-            <div v-if="benevoles?.length" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-                <div v-for="b in benevoles" :key="b.id"
-                     class="rounded-xl bg-card p-5 shadow-card transition hover:shadow-card-hover">
-                    <div class="flex items-start justify-between">
-                        <div class="flex items-start gap-3 min-w-0 flex-1">
-                            <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-700">
-                                {{ initiales(b) }}
-                            </div>
-                            <div class="min-w-0">
-                                <p class="font-bold text-text-main">{{ b.prenom }} {{ b.nom }}</p>
-                                <p v-if="b.email" class="text-xs text-text-sub">{{ b.email }}</p>
-                                <p v-if="b.telephone" class="text-xs text-text-sub">{{ b.telephone }}</p>
-                                <span v-if="b.poste_affecte"
-                                      class="mt-2 inline-block rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-700">
-                                    {{ b.poste_affecte }}
-                                </span>
-                                <p v-if="b.horaires" class="mt-1 text-xs text-text-sub">
-                                    Horaires : <span class="font-bold">{{ b.horaires }}</span>
+                                    Capacité : {{ lieu.capacite_max }} places
                                 </p>
                             </div>
+                            <span :class="['rounded-full px-2.5 py-1 text-[11px] font-bold',
+                                statutLieu(lieu).bg, statutLieu(lieu).text]">
+                                {{ statutLieu(lieu).label }}
+                            </span>
                         </div>
-                        <button @click="supprimerBenevole(b)"
-                                class="rounded p-1.5 text-text-muted transition hover:bg-red-50 hover:text-red-600">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/>
+
+                        <p v-if="lieu.description" class="mt-3 text-sm text-text-sub">
+                            {{ lieu.description }}
+                        </p>
+
+                        <div v-if="lieu.adresse || lieu.ville" class="mt-3 flex items-center gap-1.5 text-xs text-text-sub">
+                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0L6.343 16.657a8 8 0 1111.314 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
                             </svg>
-                        </button>
+                            <span>{{ [lieu.adresse, lieu.ville].filter(Boolean).join(', ') }}</span>
+                        </div>
+
+                        <div class="mt-4 flex items-center justify-between border-t border-border-soft pt-3">
+                            <Link :href="`/lieux/${lieu.id}`"
+                                  class="text-xs font-bold text-moov-blue hover:underline">
+                                Voir les détails →
+                            </Link>
+                            <button v-if="permissions.peut_supprimer" @click="supprimer('lieu', lieu)"
+                                    class="text-xs text-red-600 transition hover:text-red-700">
+                                Supprimer
+                            </button>
+                        </div>
                     </div>
+                </div>
+
+                <div v-else class="rounded-xl border-2 border-dashed border-border-soft p-12 text-center">
+                    <p class="text-sm font-bold text-text-main">Aucun lieu dans le catalogue</p>
+                    <button v-if="permissions.peut_creer" @click="ouvrirModale('lieu')"
+                            class="mt-3 rounded-lg bg-moov-noir px-4 py-2 text-sm font-bold text-white">
+                        + Ajouter le premier lieu
+                    </button>
                 </div>
             </div>
 
-            <div v-else class="rounded-xl border-2 border-dashed border-border-soft py-12 text-center">
-                <p class="font-bold text-text-main">Aucun bénévole enregistré</p>
-                <p class="mt-1 text-sm text-text-sub">Ajoutez les bénévoles qui vous accompagnent</p>
+            <!-- ═════════ CONTENU ONGLET : MATÉRIEL ═════════ -->
+            <div v-else-if="ongletActif === 'materiels'" class="p-5 sm:p-6">
+
+                <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <p class="text-sm font-bold text-text-sub">
+                        {{ materiels.length }} équipement(s) au catalogue
+                    </p>
+                    <button v-if="permissions.peut_creer" @click="ouvrirModale('materiel')"
+                            class="rounded-lg bg-moov-noir px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-moov-noir-soft">
+                        + Ajouter du matériel
+                    </button>
+                </div>
+
+                <div v-if="materiels.length > 0" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div v-for="m in materiels" :key="m.id"
+                         class="rounded-xl border border-border-soft bg-white p-5 transition hover:shadow-card">
+
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div class="min-w-0 flex-1">
+                                <h3 class="font-display text-base font-extrabold text-text-main">
+                                    {{ m.nom }}
+                                </h3>
+                                <p class="mt-1 text-xs font-bold uppercase tracking-wider text-text-muted">
+                                    {{ labelCategorieMateriel(m.categorie) }}
+                                </p>
+                            </div>
+                            <span :class="['rounded-full px-2.5 py-1 text-[11px] font-bold',
+                                couleurEtatMateriel(m.etat).bg, couleurEtatMateriel(m.etat).text]">
+                                {{ labelEtatMateriel(m.etat) }}
+                            </span>
+                        </div>
+
+                        <p v-if="m.description" class="mt-3 text-sm text-text-sub">
+                            {{ m.description }}
+                        </p>
+
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            <span class="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                                {{ m.quantite_totale }} {{ m.unite }}{{ m.quantite_totale > 1 ? 's' : '' }} total
+                            </span>
+                            <span class="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                                {{ m.quantite_disponible }} dispo
+                            </span>
+                            <span v-if="m.lieu_stockage"
+                                  class="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                                📍 {{ m.lieu_stockage }}
+                            </span>
+                        </div>
+
+                        <div class="mt-4 flex items-center justify-between border-t border-border-soft pt-3">
+                            <Link :href="`/materiels/${m.id}`"
+                                  class="text-xs font-bold text-moov-blue hover:underline">
+                                Voir les détails →
+                            </Link>
+                            <button v-if="permissions.peut_supprimer" @click="supprimer('materiel', m)"
+                                    class="text-xs text-red-600 transition hover:text-red-700">
+                                Supprimer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-else class="rounded-xl border-2 border-dashed border-border-soft p-12 text-center">
+                    <p class="text-sm font-bold text-text-main">Aucun matériel dans le catalogue</p>
+                    <button v-if="permissions.peut_creer" @click="ouvrirModale('materiel')"
+                            class="mt-3 rounded-lg bg-moov-noir px-4 py-2 text-sm font-bold text-white">
+                        + Ajouter le premier matériel
+                    </button>
+                </div>
+            </div>
+
+            <!-- ═════════ CONTENU ONGLET : PRESTATAIRES ═════════ -->
+            <div v-else-if="ongletActif === 'prestataires'" class="p-5 sm:p-6">
+
+                <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <p class="text-sm font-bold text-text-sub">
+                        {{ prestataires.length }} prestataire(s) actif(s)
+                    </p>
+                    <button v-if="permissions.peut_creer" @click="ouvrirModale('prestataire')"
+                            class="rounded-lg bg-moov-noir px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-moov-noir-soft">
+                        + Ajouter un prestataire
+                    </button>
+                </div>
+
+                <div v-if="prestataires.length > 0" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div v-for="p in prestataires" :key="p.id"
+                         class="rounded-xl border border-border-soft bg-white p-5 transition hover:shadow-card">
+
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div class="min-w-0 flex-1">
+                                <h3 class="font-display text-base font-extrabold text-text-main">
+                                    {{ p.nom }}
+                                </h3>
+                                <p class="mt-1 text-xs font-bold uppercase tracking-wider text-text-muted">
+                                    {{ labelCategoriePrestataire(p.categorie) }}
+                                </p>
+                            </div>
+                            <span v-if="p.note_interne"
+                                  class="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">
+                                ★ {{ p.note_interne }}/5
+                            </span>
+                        </div>
+
+                        <p v-if="p.description" class="mt-3 text-sm text-text-sub line-clamp-2">
+                            {{ p.description }}
+                        </p>
+
+                        <div class="mt-3 space-y-1 text-xs text-text-sub">
+                            <p v-if="p.contact_nom" class="flex items-center gap-1.5">
+                                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                                </svg>
+                                {{ p.contact_nom }}
+                            </p>
+                            <p v-if="p.email" class="flex items-center gap-1.5">
+                                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                </svg>
+                                {{ p.email }}
+                            </p>
+                            <p v-if="p.telephone" class="flex items-center gap-1.5">
+                                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                                </svg>
+                                {{ p.telephone }}
+                            </p>
+                        </div>
+
+                        <div class="mt-4 flex items-center justify-between border-t border-border-soft pt-3">
+                            <Link :href="`/prestataires/${p.id}`"
+                                  class="text-xs font-bold text-moov-blue hover:underline">
+                                Voir les détails →
+                            </Link>
+                            <button v-if="permissions.peut_supprimer" @click="supprimer('prestataire', p)"
+                                    class="text-xs text-red-600 transition hover:text-red-700">
+                                Supprimer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-else class="rounded-xl border-2 border-dashed border-border-soft p-12 text-center">
+                    <p class="text-sm font-bold text-text-main">Aucun prestataire dans l'annuaire</p>
+                    <button v-if="permissions.peut_creer" @click="ouvrirModale('prestataire')"
+                            class="mt-3 rounded-lg bg-moov-noir px-4 py-2 text-sm font-bold text-white">
+                        + Ajouter le premier prestataire
+                    </button>
+                </div>
+            </div>
+
+            <!-- ═════════ CONTENU ONGLET : BÉNÉVOLES ═════════ -->
+            <div v-else-if="ongletActif === 'benevoles'" class="p-5 sm:p-6">
+
+                <div class="mb-4">
+                    <p class="text-sm font-bold text-text-sub">
+                        {{ postes.length }} poste(s) bénévole(s) au total · {{ kpis.postes_ouverts }} ouvert(s)
+                    </p>
+                    <p class="mt-1 text-xs text-text-muted">
+                        Les postes bénévoles sont créés au sein de chaque événement.
+                    </p>
+                </div>
+
+                <div v-if="postes.length > 0" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div v-for="poste in postes" :key="poste.id"
+                         class="rounded-xl border border-border-soft bg-white p-5 transition hover:shadow-card">
+
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div class="min-w-0 flex-1">
+                                <h3 class="font-display text-base font-extrabold text-text-main">
+                                    {{ poste.nom_poste }}
+                                </h3>
+                                <p class="mt-1 text-xs text-text-sub">
+                                    Pour : <strong>{{ poste.evenement?.titre ?? '—' }}</strong>
+                                </p>
+                            </div>
+                            <span :class="['rounded-full px-2.5 py-1 text-[11px] font-bold',
+                                statutPoste(poste).bg, statutPoste(poste).text]">
+                                {{ statutPoste(poste).label }}
+                            </span>
+                        </div>
+
+                        <p class="mt-3 text-sm text-text-sub line-clamp-2">
+                            {{ poste.description }}
+                        </p>
+
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            <span class="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                                {{ poste.places_max }} place{{ poste.places_max > 1 ? 's' : '' }}
+                            </span>
+                            <span class="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                                {{ poste.candidatures?.length ?? 0 }} candidature{{ poste.candidatures?.length > 1 ? 's' : '' }}
+                            </span>
+                        </div>
+
+                        <div class="mt-4 border-t border-border-soft pt-3">
+                            <Link :href="`/postes-benevoles/${poste.id}/candidatures`"
+                                  class="text-xs font-bold text-moov-blue hover:underline">
+                                Voir les candidatures →
+                            </Link>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-else class="rounded-xl border-2 border-dashed border-border-soft p-12 text-center">
+                    <p class="text-sm font-bold text-text-main">Aucun poste bénévole</p>
+                    <p class="mt-1 text-xs text-text-sub">
+                        Créez des postes depuis la page logistique d'un événement.
+                    </p>
+                </div>
             </div>
         </div>
 
-        <div v-if="modalRessourceOuvert"
-             class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
-             @click.self="modalRessourceOuvert = false">
-            <div class="w-full max-w-lg rounded-xl bg-card shadow-2xl">
-                <div class="border-b border-border-soft p-5">
-                    <h3 class="font-display text-lg font-extrabold text-text-main">Nouvelle ressource</h3>
+        <!-- ═════════ MODALE : CRÉER UN LIEU ═════════ -->
+        <div v-if="modaleOuverte === 'lieu'"
+             class="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/60 p-4 overflow-y-auto"
+             @click.self="fermerModale">
+            <div class="my-8 w-full max-w-2xl rounded-xl bg-white shadow-2xl">
+
+                <div class="flex items-start justify-between border-b border-border-soft p-5">
+                    <div>
+                        <h3 class="font-display text-lg font-extrabold text-text-main">Nouveau lieu</h3>
+                        <p class="mt-1 text-sm text-text-sub">Ajouter un lieu au catalogue</p>
+                    </div>
+                    <button @click="fermerModale" class="rounded-lg p-1 text-text-sub hover:bg-page-bg">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
                 </div>
-                <form @submit.prevent="creerRessource" class="space-y-4 p-5">
-                    <div class="grid grid-cols-2 gap-3">
+
+                <form @submit.prevent="creerLieu" class="space-y-4 p-5">
+                    <div>
+                        <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Nom *</label>
+                        <input v-model="formLieu.nom" type="text" required
+                               placeholder="Ex: Salle Conférence A"
+                               class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                         <div>
-                            <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Nom *</label>
-                            <input v-model="formRessource.nom" type="text" required placeholder="Tables, chaises, sono..."
-                                   class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                            <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Capacité max</label>
+                            <input v-model="formLieu.capacite_max" type="text" inputmode="numeric"
+                                   @input="formLieu.capacite_max = $event.target.value.replace(/\D/g, '')"
+                                   placeholder="Ex: 200"
+                                   class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
                         </div>
                         <div>
-                            <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Type</label>
-                            <select v-model="formRessource.type"
-                                    class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10">
-                                <option value="materiel">Matériel</option>
-                                <option value="mobilier">Mobilier</option>
-                                <option value="technique">Technique</option>
-                                <option value="alimentaire">Alimentaire</option>
-                                <option value="autre">Autre</option>
+                            <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Ville</label>
+                            <input v-model="formLieu.ville" type="text"
+                                   placeholder="Ouagadougou"
+                                   class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Adresse</label>
+                        <input v-model="formLieu.adresse" type="text"
+                               placeholder="Adresse complète"
+                               class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Description</label>
+                        <textarea v-model="formLieu.description" rows="3"
+                                  placeholder="Équipements inclus, particularités..."
+                                  class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                    </div>
+
+                    <div class="flex justify-end gap-2 border-t border-border-soft pt-4">
+                        <button type="button" @click="fermerModale"
+                                class="rounded-lg border border-border-soft bg-white px-4 py-2 text-sm font-bold text-text-sub transition hover:bg-page-bg">
+                            Annuler
+                        </button>
+                        <button type="submit" :disabled="formLieu.processing"
+                                class="rounded-lg bg-moov-noir px-5 py-2 text-sm font-bold text-white transition hover:bg-moov-noir-soft disabled:opacity-50">
+                            {{ formLieu.processing ? 'Création...' : 'Créer le lieu' }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- ═════════ MODALE : CRÉER DU MATÉRIEL ═════════ -->
+        <div v-if="modaleOuverte === 'materiel'"
+             class="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/60 p-4 overflow-y-auto"
+             @click.self="fermerModale">
+            <div class="my-8 w-full max-w-2xl rounded-xl bg-white shadow-2xl">
+
+                <div class="flex items-start justify-between border-b border-border-soft p-5">
+                    <div>
+                        <h3 class="font-display text-lg font-extrabold text-text-main">Nouveau matériel</h3>
+                        <p class="mt-1 text-sm text-text-sub">Ajouter du matériel au catalogue</p>
+                    </div>
+                    <button @click="fermerModale" class="rounded-lg p-1 text-text-sub hover:bg-page-bg">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <form @submit.prevent="creerMateriel" class="space-y-4 p-5">
+                    <div>
+                        <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Nom *</label>
+                        <input v-model="formMateriel.nom" type="text" required
+                               placeholder="Ex: Vidéoprojecteur Full HD"
+                               class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                            <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Catégorie *</label>
+                            <select v-model="formMateriel.categorie" required
+                                    class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue">
+                                <option value="">Sélectionner</option>
+                                <option v-for="(label, code) in categoriesMateriel" :key="code" :value="code">{{ label }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">État *</label>
+                            <select v-model="formMateriel.etat" required
+                                    class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue">
+                                <option v-for="(label, code) in etatsMateriel" :key="code" :value="code">{{ label }}</option>
                             </select>
                         </div>
                     </div>
-                    <div class="grid grid-cols-3 gap-3">
+
+                    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                         <div>
-                            <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Quantité *</label>
-                            <input v-model.number="formRessource.quantite_totale" type="number" min="1" required
-                                   class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                            <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Quantité *</label>
+                            <input v-model="formMateriel.quantite_totale" type="text" inputmode="numeric" required
+                                   @input="formMateriel.quantite_totale = $event.target.value.replace(/\D/g, '')"
+                                   placeholder="Ex: 10"
+                                   class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
                         </div>
                         <div>
-                            <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Unité</label>
-                            <input v-model="formRessource.unite" type="text" placeholder="pcs, kg, L..."
-                                   class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                            <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Unité *</label>
+                            <select v-model="formMateriel.unite" required
+                                    class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue">
+                                <option value="pièce">Pièce</option>
+                                <option value="lot">Lot</option>
+                                <option value="carton">Carton</option>
+                                <option value="paire">Paire</option>
+                            </select>
                         </div>
                         <div>
-                            <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Coût/unité</label>
-                            <input v-model.number="formRessource.cout_unitaire" type="number" min="0"
-                                   class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                            <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Stockage</label>
+                            <input v-model="formMateriel.lieu_stockage" type="text"
+                                   placeholder="Magasin Moov"
+                                   class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
                         </div>
                     </div>
+
                     <div>
-                        <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Fournisseur</label>
-                        <input v-model="formRessource.fournisseur" type="text"
-                               class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                        <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Description</label>
+                        <textarea v-model="formMateriel.description" rows="3"
+                                  placeholder="Détails techniques..."
+                                  class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                    </div>
+
+                    <div class="flex justify-end gap-2 border-t border-border-soft pt-4">
+                        <button type="button" @click="fermerModale"
+                                class="rounded-lg border border-border-soft bg-white px-4 py-2 text-sm font-bold text-text-sub transition hover:bg-page-bg">
+                            Annuler
+                        </button>
+                        <button type="submit" :disabled="formMateriel.processing"
+                                class="rounded-lg bg-moov-noir px-5 py-2 text-sm font-bold text-white transition hover:bg-moov-noir-soft disabled:opacity-50">
+                            {{ formMateriel.processing ? 'Création...' : 'Créer le matériel' }}
+                        </button>
                     </div>
                 </form>
-                <div class="flex justify-end gap-2 border-t border-border-soft bg-page-bg/50 p-4">
-                    <button @click="modalRessourceOuvert = false"
-                            class="rounded-lg border border-border-soft bg-white px-5 py-2 text-sm font-bold text-text-sub transition hover:bg-page-bg">
-                        Annuler
-                    </button>
-                    <button @click="creerRessource" :disabled="formRessource.processing"
-                            class="rounded-lg bg-moov-noir px-5 py-2 text-sm font-bold text-white transition hover:bg-moov-noir-soft disabled:opacity-50">
-                        Ajouter
-                    </button>
-                </div>
             </div>
         </div>
 
-        <!-- ════════ MODALE DOTATION ════════ -->
-        <div v-if="modalDotationOuvert"
-             class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
-             @click.self="modalDotationOuvert = false">
-            <div class="w-full max-w-md rounded-xl bg-card shadow-2xl">
-                <div class="border-b border-border-soft p-5">
-                    <h3 class="font-display text-lg font-extrabold text-text-main">Nouvelle dotation</h3>
-                </div>
-                <form @submit.prevent="creerDotation" class="space-y-4 p-5">
-                    <div>
-                        <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Bénéficiaire *</label>
-                        <input v-model="formDotation.beneficiaire" type="text" required placeholder="Nom du destinataire"
-                               class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
-                    </div>
-                    <div>
-                        <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Item *</label>
-                        <input v-model="formDotation.item" type="text" required placeholder="T-shirt, badge, kit..."
-                               class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Quantité *</label>
-                            <input v-model.number="formDotation.quantite" type="number" min="1" required
-                                   class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
-                        </div>
-                        <div>
-                            <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Taille</label>
-                            <input v-model="formDotation.taille" type="text" placeholder="M, L, XL..."
-                                   class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
-                        </div>
-                    </div>
-                    <label class="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" v-model="formDotation.a_retourner"
-                               class="h-4 w-4 rounded border-border-soft text-moov-blue focus:ring-2 focus:ring-moov-blue/20"/>
-                        <span class="text-sm text-text-main">À retourner après l'événement</span>
-                    </label>
-                </form>
-                <div class="flex justify-end gap-2 border-t border-border-soft bg-page-bg/50 p-4">
-                    <button @click="modalDotationOuvert = false"
-                            class="rounded-lg border border-border-soft bg-white px-5 py-2 text-sm font-bold text-text-sub transition hover:bg-page-bg">
-                        Annuler
-                    </button>
-                    <button @click="creerDotation" :disabled="formDotation.processing"
-                            class="rounded-lg bg-moov-noir px-5 py-2 text-sm font-bold text-white transition hover:bg-moov-noir-soft disabled:opacity-50">
-                        Distribuer
-                    </button>
-                </div>
-            </div>
-        </div>
+        <!-- ═════════ MODALE : CRÉER UN PRESTATAIRE ═════════ -->
+        <div v-if="modaleOuverte === 'prestataire'"
+             class="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/60 p-4 overflow-y-auto"
+             @click.self="fermerModale">
+            <div class="my-8 w-full max-w-2xl rounded-xl bg-white shadow-2xl">
 
-        <!-- ════════ MODALE BÉNÉVOLE ════════ -->
-        <div v-if="modalBenevoleOuvert"
-             class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
-             @click.self="modalBenevoleOuvert = false">
-            <div class="w-full max-w-lg rounded-xl bg-card shadow-2xl">
-                <div class="border-b border-border-soft p-5">
-                    <h3 class="font-display text-lg font-extrabold text-text-main">Nouveau bénévole</h3>
+                <div class="flex items-start justify-between border-b border-border-soft p-5">
+                    <div>
+                        <h3 class="font-display text-lg font-extrabold text-text-main">Nouveau prestataire</h3>
+                        <p class="mt-1 text-sm text-text-sub">Ajouter un fournisseur à l'annuaire</p>
+                    </div>
+                    <button @click="fermerModale" class="rounded-lg p-1 text-text-sub hover:bg-page-bg">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
                 </div>
-                <form @submit.prevent="creerBenevole" class="space-y-4 p-5">
-                    <div class="grid grid-cols-2 gap-3">
+
+                <form @submit.prevent="creerPrestataire" class="space-y-4 p-5">
+                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                         <div>
-                            <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Nom *</label>
-                            <input v-model="formBenevole.nom" type="text" required
-                                   class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                            <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Nom de l'entreprise *</label>
+                            <input v-model="formPrestataire.nom" type="text" required
+                                   placeholder="Ex: AudioVision Burkina"
+                                   class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
                         </div>
                         <div>
-                            <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Prénom *</label>
-                            <input v-model="formBenevole.prenom" type="text" required
-                                   class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Email</label>
-                            <input v-model="formBenevole.email" type="email"
-                                   class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
-                        </div>
-                        <div>
-                            <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Téléphone</label>
-                            <input v-model="formBenevole.telephone" type="tel" placeholder="+226 70 12 34 56"
-                                   class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                            <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Catégorie *</label>
+                            <select v-model="formPrestataire.categorie" required
+                                    class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue">
+                                <option value="">Sélectionner</option>
+                                <option v-for="(label, code) in categoriesPrestataire" :key="code" :value="code">{{ label }}</option>
+                            </select>
                         </div>
                     </div>
+
+                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                            <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Personne contact</label>
+                            <input v-model="formPrestataire.contact_nom" type="text"
+                                   placeholder="Ex: Mariam Sawadogo"
+                                   class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Ville</label>
+                            <input v-model="formPrestataire.ville" type="text"
+                                   placeholder="Ouagadougou"
+                                   class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                            <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Email</label>
+                            <input v-model="formPrestataire.email" type="email"
+                                   placeholder="contact@entreprise.bf"
+                                   class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Téléphone</label>
+                            <input v-model="formPrestataire.telephone" type="text"
+                                   placeholder="+226 70 11 22 33"
+                                   class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                        </div>
+                    </div>
+
                     <div>
-                        <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Poste affecté</label>
-                        <input v-model="formBenevole.poste_affecte" type="text" placeholder="Accueil, Logistique, Sécurité..."
-                               class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                        <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Description / Services</label>
+                        <textarea v-model="formPrestataire.description" rows="3"
+                                  placeholder="Services proposés, spécialités..."
+                                  class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
                     </div>
+
                     <div>
-                        <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Horaires</label>
-                        <input v-model="formBenevole.horaires" type="text" placeholder="08h - 17h"
-                               class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                        <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">Note interne (/5)</label>
+                        <select v-model="formPrestataire.note_interne"
+                                class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue">
+                            <option value="">Pas de note</option>
+                            <option value="1">★ - À éviter</option>
+                            <option value="2">★★ - Correct</option>
+                            <option value="3">★★★ - Bon</option>
+                            <option value="4">★★★★ - Très bon</option>
+                            <option value="5">★★★★★ - Excellent</option>
+                        </select>
+                    </div>
+
+                    <div class="flex justify-end gap-2 border-t border-border-soft pt-4">
+                        <button type="button" @click="fermerModale"
+                                class="rounded-lg border border-border-soft bg-white px-4 py-2 text-sm font-bold text-text-sub transition hover:bg-page-bg">
+                            Annuler
+                        </button>
+                        <button type="submit" :disabled="formPrestataire.processing"
+                                class="rounded-lg bg-moov-noir px-5 py-2 text-sm font-bold text-white transition hover:bg-moov-noir-soft disabled:opacity-50">
+                            {{ formPrestataire.processing ? 'Création...' : 'Créer le prestataire' }}
+                        </button>
                     </div>
                 </form>
-                <div class="flex justify-end gap-2 border-t border-border-soft bg-page-bg/50 p-4">
-                    <button @click="modalBenevoleOuvert = false"
-                            class="rounded-lg border border-border-soft bg-white px-5 py-2 text-sm font-bold text-text-sub transition hover:bg-page-bg">
-                        Annuler
-                    </button>
-                    <button @click="creerBenevole" :disabled="formBenevole.processing"
-                            class="rounded-lg bg-moov-noir px-5 py-2 text-sm font-bold text-white transition hover:bg-moov-noir-soft disabled:opacity-50">
-                        Ajouter à l'équipe
-                    </button>
-                </div>
             </div>
         </div>
 

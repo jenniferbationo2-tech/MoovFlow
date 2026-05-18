@@ -6,10 +6,11 @@ const page = usePage()
 const user = computed(() => page.props.auth?.user ?? null)
 const flash = computed(() => page.props.flash ?? {})
 const roles = computed(() => user.value?.roles ?? [])
+const appSettings = computed(() => page.props.app ?? {})
 
 const sidebarOpen = ref(true)
 
-// ── Couleur d'accent par rôle ─────────────
+// ─── COULEUR D'ACCENT PAR RÔLE ─────────
 const couleurRole = computed(() => {
     if (roles.value.includes('admin')) return { bg: 'bg-red-600', text: 'text-red-600', label: 'ADMIN' }
     if (roles.value.includes('responsable_dcirp')) return { bg: 'bg-purple-600', text: 'text-purple-600', label: 'RESPONSABLE_DCIRP' }
@@ -20,7 +21,7 @@ const couleurRole = computed(() => {
     return { bg: 'bg-slate-600', text: 'text-slate-600', label: 'UTILISATEUR' }
 })
 
-// ── Initiales utilisateur ─────────────────
+// ─── INITIALES UTILISATEUR ─────────────
 const initials = computed(() => {
     if (!user.value) return ''
     const p = user.value.prenom?.[0] ?? ''
@@ -28,20 +29,23 @@ const initials = computed(() => {
     return (p + n).toUpperCase() || user.value.email?.[0]?.toUpperCase() || 'U'
 })
 
-// ── Menu adapté au rôle ────────────────────
-const menus = computed(() => {
+// ─── PEUT VOIR LE MENU ADMIN ───────────
+const peutVoirAdmin = computed(() =>
+    roles.value.includes('admin') || roles.value.includes('responsable_dcirp')
+)
+
+// ─── MENUS PRINCIPAUX (par rôle) ───────
+const menusPrincipaux = computed(() => {
     if (roles.value.includes('admin')) {
         return [
             { label: 'Tableau de Bord', icon: '▦', href: '/dashboard' },
-            { label: 'Gestion Utilisateurs', icon: '👥', href: '/admin/users' },
             { label: 'Gestion Événements', icon: '◷', href: '/evenements' },
             { label: 'Dossiers Inscriptions', icon: '◫', href: '/inscriptions' },
             { label: 'Annuaire Participants', icon: '◉', href: '/annuaire' },
-            { label: 'Logistique & Stocks', icon: '⬒', href: '#' },
-            { label: 'Impact RSE & Rapports', icon: '◲', href: '#' },
-            { label: 'Paramètres Système', icon: '⚙', href: '/admin/settings' },
-            { label: ' Bénévoles', icon: '', href: '/vivier/benevoles' },
-            { label: 'Intervenants', icon: '', href: '/vivier/intervenants' },
+            { label: 'Logistique & Stocks', icon: '⬒', href: '/logistique' },
+            { label: 'Impact RSE & Rapports', icon: '◲', href: '/analyses' },
+            { label: 'Vivier Bénévoles', icon: '♥', href: '/vivier/benevoles' },
+            { label: 'Vivier Intervenants', icon: '★', href: '/vivier/intervenants' },
         ]
     }
 
@@ -50,11 +54,11 @@ const menus = computed(() => {
             { label: 'Tableau de Bord', icon: '▦', href: '/dashboard' },
             { label: 'Gestion Événements', icon: '◷', href: '/evenements' },
             { label: 'Dossiers Inscriptions', icon: '◫', href: '/inscriptions' },
-            { label: 'Annuaire Participants', icon: '📇', href: '/annuaire' },
+            { label: 'Annuaire Participants', icon: '◉', href: '/annuaire' },
             { label: 'Validation', icon: '✓', href: '/inscriptions?statut=en_attente' },
-            { label: 'Impact RSE & Rapports', icon: '📊', href: '/rapports' },
-            { label: ' Bénévoles', icon: '', href: '/vivier/benevoles' },
-            { label: ' Intervenants', icon: '', href: '/vivier/intervenants' },
+            { label: 'Impact RSE & Rapports', icon: '◲', href: '/rapport-rse' },
+            { label: 'Vivier Bénévoles', icon: '♥', href: '/vivier/benevoles' },
+            { label: 'Vivier Intervenants', icon: '★', href: '/vivier/intervenants' },
         ]
     }
 
@@ -62,12 +66,11 @@ const menus = computed(() => {
         return [
             { label: 'Tableau de Bord', icon: '▦', href: '/dashboard' },
             { label: 'Mes Événements', icon: '◷', href: '/evenements' },
-            { label: 'Nouvel Événement', icon: '➕', href: '/evenements/create' },
+            { label: 'Nouvel Événement', icon: '+', href: '/evenements/create' },
             { label: 'Dossiers Inscriptions', icon: '◫', href: '/inscriptions' },
-            { label: 'Annuaire Participants', icon: '📇', href: '/annuaire' },
-            { label: 'Logistique & Stocks', icon: '⬒', href: '#' },
-            { label: 'Scanner Billets', icon: '📷', href: '#' },
-            { label: 'Annuaire Participants', icon: '👤', href: '#' },
+            { label: 'Annuaire Participants', icon: '◉', href: '/annuaire' },
+            { label: 'Logistique & Stocks', icon: '⬒', href: '/logistique' },
+            { label: 'Scanner Billets', icon: '◐', href: '#' },
         ]
     }
 
@@ -85,6 +88,14 @@ const menus = computed(() => {
     ]
 })
 
+// ─── MENU ADMINISTRATION (Admin + Responsable seulement) ───
+const menusAdmin = computed(() => [
+    { label: 'Utilisateurs', icon: '◐', href: '/admin/users' },
+    { label: 'Journal d\'audit', icon: '◧', href: '/admin/audit' },
+    { label: 'Centre de Sécurité', icon: '⚿', href: '/admin/security' },
+    { label: 'Paramètres', icon: '⚙', href: '/admin/settings' },
+])
+
 const estActif = (href) => {
     if (href === '#') return false
     return page.url === href || (href.length > 1 && page.url.startsWith(href))
@@ -96,7 +107,6 @@ const logout = () => router.post(route('logout'))
 <template>
     <div class="flex min-h-screen bg-page-bg font-sans antialiased">
 
-
         <aside :class="[
             'fixed inset-y-0 left-0 z-40 flex flex-col bg-moov-blue text-white shadow-sidebar transition-all duration-300',
             sidebarOpen ? 'w-64' : 'w-20'
@@ -104,16 +114,30 @@ const logout = () => router.post(route('logout'))
 
             <!-- Logo -->
             <div class="border-b border-white/10 px-5 py-6">
-                <div v-if="sidebarOpen">
-                    <h1 class="text-xl font-extrabold tracking-tight text-white">MOOV AFRICA</h1>
-                    <p class="mt-0.5 text-xs font-medium text-white/60">Portail dCIRP</p>
+                <div v-if="sidebarOpen" class="flex items-center gap-3">
+                    <img v-if="appSettings.logo" :src="appSettings.logo" alt="Logo"
+                        class="h-10 w-10 flex-shrink-0 rounded-lg object-contain bg-white/10 p-1" />
+                    <div class="min-w-0">
+                        <h1 class="text-xl font-extrabold tracking-tight text-white truncate">
+                            {{ appSettings.name || 'MOOV AFRICA' }}
+                        </h1>
+                        <p class="mt-0.5 text-xs font-medium text-white/60 truncate">
+                            {{ appSettings.slogan || 'Portail dCIRP' }}
+                        </p>
+                    </div>
                 </div>
-                <div v-else class="text-center text-xl font-extrabold">M</div>
+                <div v-else class="text-center">
+                    <img v-if="appSettings.logo" :src="appSettings.logo" alt="Logo"
+                        class="mx-auto h-8 w-8 rounded object-contain bg-white/10 p-0.5" />
+                    <span v-else class="text-xl font-extrabold">{{ (appSettings.name || 'M')[0] }}</span>
+                </div>
             </div>
 
-            <!-- Menu principal -->
+            <!-- Menus -->
             <nav class="flex-1 space-y-1 overflow-y-auto px-3 py-5">
-                <Link v-for="item in menus" :key="item.label" :href="item.href" :class="[
+
+                <!-- ─── MENU PRINCIPAL ─── -->
+                <Link v-for="item in menusPrincipaux" :key="item.label" :href="item.href" :class="[
                     'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition',
                     estActif(item.href)
                         ? 'bg-white/15 text-white shadow-sm'
@@ -122,6 +146,28 @@ const logout = () => router.post(route('logout'))
                     <span class="text-lg w-5 text-center flex-shrink-0">{{ item.icon }}</span>
                     <span v-if="sidebarOpen" class="truncate">{{ item.label }}</span>
                 </Link>
+
+                <div v-if="peutVoirAdmin" class="pt-4">
+
+                    <!-- Séparateur + titre -->
+                    <div v-if="sidebarOpen" class="mx-2 mb-2 mt-2 border-t border-white/10 pt-3">
+                        <p class="px-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">
+                            Administration
+                        </p>
+                    </div>
+                    <div v-else class="mx-2 my-3 border-t border-white/10" />
+
+                    <!-- Liens admin -->
+                    <Link v-for="item in menusAdmin" :key="item.label" :href="item.href" :class="[
+                        'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition',
+                        estActif(item.href)
+                            ? 'bg-white/15 text-white shadow-sm'
+                            : 'text-white/75 hover:bg-white/10 hover:text-white'
+                    ]">
+                        <span class="text-lg w-5 text-center flex-shrink-0">{{ item.icon }}</span>
+                        <span v-if="sidebarOpen" class="truncate">{{ item.label }}</span>
+                    </Link>
+                </div>
             </nav>
 
             <!-- Profil utilisateur -->
@@ -143,17 +189,17 @@ const logout = () => router.post(route('logout'))
 
                 <button @click="logout"
                     class="flex w-full items-center gap-3 rounded-lg border border-white/20 bg-white/5 px-3 py-2.5 text-sm font-semibold text-white/90 transition hover:bg-white/15">
-                    <span class="text-base w-5 text-center"></span>
+                    <span class="text-base w-5 text-center">⎋</span>
                     <span v-if="sidebarOpen">DÉCONNEXION</span>
                 </button>
 
                 <p v-if="sidebarOpen" class="mt-3 text-center text-[10px] text-white/40">
-                    MoovFlow • Burkina Faso
+                    {{ appSettings.name || 'MoovFlow' }} • {{ appSettings.pays || 'Burkina Faso' }}
                 </p>
             </div>
         </aside>
 
-        <!-- ═══════════ CONTENU ═══════════ -->
+       
         <div :class="['flex flex-1 flex-col transition-all duration-300', sidebarOpen ? 'ml-64' : 'ml-20']">
 
             <!-- Header bar -->
