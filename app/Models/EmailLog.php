@@ -10,8 +10,11 @@ class EmailLog extends Model
 {
     use HasFactory;
 
+    protected $table = 'email_logs';
+
     protected $fillable = [
         'inscription_id',
+        'campagne_id',
         'type',
         'destinataire',
         'sujet',
@@ -25,66 +28,25 @@ class EmailLog extends Model
         'envoye_at' => 'datetime',
     ];
 
-    // Constantes pour les types
-    public const TYPE_PREINSCRIPTION_RECUE = 'preinscription_recue';
-    public const TYPE_PRESELECTIONNE       = 'preselectionne';
-    public const TYPE_DOSSIER_RECU         = 'dossier_recu';
-    public const TYPE_ACCEPTE              = 'accepte';
-    public const TYPE_REFUSE               = 'refuse';
-    public const TYPE_RAPPEL_VEILLE        = 'rappel_veille';
-    public const TYPE_REMERCIEMENT         = 'remerciement';
-    public const TYPE_RAPPEL_DOSSIER       = 'rappel_dossier';
-
-    // Constantes pour les statuts
-    public const STATUT_QUEUED = 'queued';
-    public const STATUT_SENT   = 'sent';
-    public const STATUT_FAILED = 'failed';
-
-    /**
-     * Relation : email d'une inscription.
-     */
+    // ─── RELATIONS ──────────────────────
     public function inscription(): BelongsTo
     {
         return $this->belongsTo(Inscription::class);
     }
 
-    /**
-     * Marquer comme envoyé.
-     */
-    public function marquerEnvoye(): void
+    public function campagne(): BelongsTo
     {
-        $this->update([
-            'statut'    => self::STATUT_SENT,
-            'envoye_at' => now(),
-        ]);
+        return $this->belongsTo(CommunicationCampaign::class, 'campagne_id');
     }
 
-    /**
-     * Marquer comme échoué.
-     */
-    public function marquerEchec(string $erreur): void
+    // ─── HELPERS ────────────────────────
+    public function getEstReussiAttribute(): bool
     {
-        $this->update([
-            'statut' => self::STATUT_FAILED,
-            'erreur' => $erreur,
-        ]);
+        return $this->statut === 'sent';
     }
 
-    /**
-     * Libellés humains pour l'affichage.
-     */
-    public static function labelType(string $type): string
+    public function getEstEchecAttribute(): bool
     {
-        return match ($type) {
-            self::TYPE_PREINSCRIPTION_RECUE => 'Pré-inscription reçue',
-            self::TYPE_PRESELECTIONNE       => 'Présélectionné(e)',
-            self::TYPE_DOSSIER_RECU         => 'Dossier reçu',
-            self::TYPE_ACCEPTE              => 'Candidature acceptée',
-            self::TYPE_REFUSE               => 'Candidature refusée',
-            self::TYPE_RAPPEL_VEILLE        => 'Rappel veille',
-            self::TYPE_REMERCIEMENT         => 'Remerciement post-événement',
-            self::TYPE_RAPPEL_DOSSIER       => 'Rappel dossier à compléter',
-            default                          => $type,
-        };
+        return $this->statut === 'failed';
     }
 }

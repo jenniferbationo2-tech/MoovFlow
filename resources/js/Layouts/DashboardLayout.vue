@@ -74,13 +74,15 @@ const menusPrincipaux = computed(() => {
         ]
     }
 
-    if (roles.value.includes('participant')) {
-        return [
-            { label: 'Tableau de Bord', icon: '▦', href: '/dashboard' },
-            { label: 'Événements', icon: '◷', href: '/evenements' },
-            { label: 'Mes Inscriptions', icon: '◫', href: '/mes-inscriptions' },
-        ]
-    }
+  if (roles.value.includes('participant')) {
+    return [
+        { label: 'Tableau de Bord',  icon: '▦', href: '/dashboard' },
+        { label: 'Événements',       icon: '◷', href: '/evenements' },
+        { label: 'Mes Inscriptions', icon: '◫', href: '/mes-inscriptions' },
+        { label: 'Mes Enquêtes',     icon: '◧', href: '/mes-enquetes' },
+        { label: 'Mes Certificats',  icon: '🎓', href: '/mes-certificats' },
+    ]
+}
 
     return [
         { label: 'Tableau de Bord', icon: '▦', href: '/dashboard' },

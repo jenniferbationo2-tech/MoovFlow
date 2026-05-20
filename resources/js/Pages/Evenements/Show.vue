@@ -257,6 +257,20 @@ const lienInscription = computed(() => {
                             class="rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-violet-700">
                             Compétition
                         </Link>
+                        <Link :href="`/evenements/${evenement.id}/communication/campaigns`"
+                            class="rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-cyan-700">
+                             Campagnes
+                        </Link>
+
+                        <Link :href="`/evenements/${evenement.id}/communication/enquetes`"
+                            class="rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-purple-700">
+                             Enquêtes
+                        </Link>
+
+                        <Link :href="`/evenements/${evenement.id}/certificats`"
+                            class="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-700">
+                             Certificats
+                        </Link>
 
                         <Link :href="`/evenements/${evenement.id}/edit`"
                             class="rounded-lg border border-border-soft bg-white px-4 py-2.5 text-sm font-bold text-text-main transition hover:border-moov-blue hover:text-moov-blue">

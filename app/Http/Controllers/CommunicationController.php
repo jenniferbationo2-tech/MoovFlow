@@ -3,205 +3,276 @@
 namespace App\Http\Controllers;
 
 use App\Models\CommunicationCampaign;
+use App\Models\EmailLog;
 use App\Models\Evenement;
-use App\Models\User;
-use App\Services\CampaignService;
-use Carbon\Carbon;
+use App\Models\Inscription;
+use App\Services\EmailCampaignService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CommunicationController extends Controller
 {
-    public function __construct(
-        private readonly CampaignService $campaignService
-    ) {
-    }
-
-    /**
-     * Affiche les campagnes d'invitation déjà envoyées pour un événement.
-     */
+    // ════════════════════════════════════════════
+    //   PAGE LISTE DES CAMPAGNES
+    // ════════════════════════════════════════════
     public function campaigns(Evenement $evenement): Response
     {
-        abort_unless(request()->user()?->can('communication.view'), 403);
+        $this->autoriserOrganisateurOuAdmin($evenement);
 
-        $campaigns = $evenement->communicationCampaigns()
-            ->withCount('invitations')
-            ->latest('date_envoi')
+        $campagnes = CommunicationCampaign::where('evenement_id', $evenement->id)
+            ->withCount(['envois as nb_envoyes' => function ($q) {
+                $q->where('statut', 'sent');
+            }])
+            ->withCount(['envois as nb_erreurs' => function ($q) {
+                $q->where('statut', 'failed');
+            }])
+            ->orderByDesc('created_at')
             ->get()
-            ->map(fn (CommunicationCampaign $campaign): array => [
-                'id' => $campaign->id,
-                'objet' => $campaign->objet,
-                'statut' => $campaign->statut,
-                'date_envoi' => optional($campaign->date_envoi)?->toIso8601String(),
-                'nb_destinataires' => $campaign->nb_destinataires ?? $campaign->invitations_count,
-                'nb_ouvertures' => $campaign->nb_ouvertures,
-                'nb_acceptations' => $campaign->nb_acceptations,
-                'taux_acceptation' => ($campaign->nb_destinataires ?? 0) > 0
-                    ? round((($campaign->nb_acceptations ?? 0) / $campaign->nb_destinataires) * 100, 1)
-                    : 0,
-            ])
-            ->all();
+            ->map(fn (CommunicationCampaign $c) => [
+                'id'                  => $c->id,
+                'objet'               => $c->objet,
+                'mode_destinataires'  => $c->mode_destinataires,
+                'statut'              => $c->statut,
+                'date_envoi'          => $c->date_envoi?->toIso8601String(),
+                'nb_destinataires'    => $c->nb_destinataires,
+                'nb_envoyes'          => $c->nb_envoyes,
+                'nb_erreurs'          => $c->nb_erreurs,
+                'created_at'          => $c->created_at->toIso8601String(),
+            ]);
+
+        // Compteurs pour KPIs
+        $kpis = [
+            'total_campagnes' => $campagnes->count(),
+            'campagnes_envoyees' => $campagnes->where('statut', 'envoyee')->count(),
+            'campagnes_brouillon' => $campagnes->where('statut', 'brouillon')->count(),
+            'total_emails_envoyes' => $campagnes->sum('nb_envoyes'),
+        ];
 
         return Inertia::render('Communication/Campaigns/Index', [
             'evenement' => [
-                'id' => $evenement->id,
-                'titre' => $evenement->titre,
+                'id'         => $evenement->id,
+                'titre'      => $evenement->titre,
+                'date_debut' => $evenement->date_debut?->toIso8601String(),
+                'statut'     => $evenement->statut,
             ],
-            'campaigns' => $campaigns,
-            'stats' => [
-                'envoyees' => $evenement->communicationCampaigns()->where('statut', 'envoyee')->count(),
-                'ouvertes' => (int) $evenement->communicationCampaigns()->sum('nb_ouvertures'),
-                'acceptees' => (int) $evenement->communicationCampaigns()->sum('nb_acceptations'),
-            ],
+            'campagnes' => $campagnes,
+            'kpis'      => $kpis,
         ]);
     }
 
-    /**
-     * Affiche le formulaire de création de campagne email.
-     */
-    public function createCampaign(Evenement $evenement): Response
+    // ════════════════════════════════════════════
+    //   PAGE CRÉATION CAMPAGNE
+    // ════════════════════════════════════════════
+    public function createCampaign(Evenement $evenement, EmailCampaignService $service): Response
     {
-        abort_unless(request()->user()?->can('communication.manage'), 403);
+        $this->autoriserOrganisateurOuAdmin($evenement);
 
-        $participants = $evenement->inscriptions()
-            ->with('user:id,name,email')
-            ->get()
-            ->map(fn ($inscription): ?array => $inscription->user ? [
-                'id' => $inscription->user->id,
-                'name' => $inscription->user->name,
-                'email' => $inscription->user->email,
-            ] : null)
-            ->filter()
-            ->values()
-            ->all();
+        // Compteurs par mode pour aider l'utilisateur
+        $compteurs = [
+            'tous'      => $service->compterDestinataires($evenement->id, 'tous'),
+            'valides'   => $service->compterDestinataires($evenement->id, 'valides'),
+            'presents'  => $service->compterDestinataires($evenement->id, 'presents'),
+            'absents'   => $service->compterDestinataires($evenement->id, 'absents'),
+            'refuses'   => $service->compterDestinataires($evenement->id, 'refuses'),
+        ];
 
         return Inertia::render('Communication/Campaigns/Create', [
             'evenement' => [
-                'id' => $evenement->id,
+                'id'    => $evenement->id,
                 'titre' => $evenement->titre,
             ],
-            'participants' => $participants,
-            'templates' => $this->emailTemplates(),
+            'compteurs'        => $compteurs,
+            'cibles'           => CommunicationCampaign::ciblesDisponibles(),
+            'modelesPredefinis' => CommunicationCampaign::modelesPredefinis(),
+            'variablesDispos'  => [
+                '{prenom}'        => 'Prénom du participant',
+                '{nom}'           => 'Nom du participant',
+                '{email}'         => 'Email du participant',
+                '{evenement}'     => "Titre de l'événement",
+                '{date_evenement}' => "Date de l'événement",
+                '{lieu}'          => "Lieu de l'événement",
+                '{reference}'     => "Référence d'inscription",
+                '{app_name}'      => "Nom de l'application",
+            ],
         ]);
     }
 
-    /**
-     * Enregistre puis envoie ou planifie une campagne d'invitations.
-     */
-    public function sendCampaign(Request $request, Evenement $evenement): RedirectResponse
+    // ════════════════════════════════════════════
+    //   ENREGISTRER + ÉVENTUELLEMENT ENVOYER
+    // ════════════════════════════════════════════
+    public function sendCampaign(Request $request, Evenement $evenement, EmailCampaignService $service): RedirectResponse
     {
-        abort_unless($request->user()?->can('communication.send'), 403);
+        $this->autoriserOrganisateurOuAdmin($evenement);
 
         $validated = $request->validate([
-            'objet' => ['required', 'string', 'max:255'],
-            'contenu' => ['required', 'string'],
-            'mode_destinataires' => ['required', Rule::in(['tous_participants', 'participants_evenement', 'liste_personnalisee'])],
-            'emails_personnalises' => ['nullable', 'array'],
-            'emails_personnalises.*' => ['required', 'email'],
-            'date_planification' => ['nullable', 'date', 'after_or_equal:now'],
+            'objet'              => ['required', 'string', 'max:255'],
+            'contenu'            => ['required', 'string', 'min:10'],
+            'mode_destinataires' => ['required', 'in:tous,valides,presents,absents,refuses'],
+            'action'             => ['required', 'in:brouillon,envoyer'],
         ]);
 
-        $emails = $this->resolveCampaignEmails($evenement, $validated);
-        $datePlanification = ! empty($validated['date_planification'])
-            ? Carbon::parse($validated['date_planification'])
-            : null;
-
-        $campaign = CommunicationCampaign::query()->create([
-            'evenement_id' => $evenement->id,
-            'objet' => $validated['objet'],
-            'contenu' => $validated['contenu'],
+        // Créer la campagne
+        $campagne = CommunicationCampaign::create([
+            'evenement_id'       => $evenement->id,
+            'objet'              => $validated['objet'],
+            'contenu'            => $validated['contenu'],
             'mode_destinataires' => $validated['mode_destinataires'],
-            'emails_personnalises' => $validated['emails_personnalises'] ?? [],
-            'statut' => $datePlanification && $datePlanification->isFuture() ? 'planifiee' : 'envoyee',
-            'date_envoi' => $datePlanification ?? now(),
-            'nb_destinataires' => count($emails),
-            'nb_ouvertures' => 0,
-            'nb_acceptations' => 0,
+            'statut'             => 'brouillon',
+            'nb_destinataires'   => 0,
         ]);
 
-        $invitations = $this->campaignService->sendBulkInvitations(
-            $evenement,
-            $emails,
-            $validated['contenu'],
-            $campaign,
-            $datePlanification,
-        );
+        // Si action = envoyer, envoyer maintenant
+        if ($validated['action'] === 'envoyer') {
+            $resume = $service->envoyerCampagne($campagne);
 
-        if (! ($datePlanification && $datePlanification->isFuture())) {
-            $campaign->update([
-                'date_envoi' => now(),
-                'nb_destinataires' => count($invitations),
-            ]);
+            $message = "Campagne envoyée : {$resume['envoyes']} succès";
+            if ($resume['erreurs'] > 0) {
+                $message .= ", {$resume['erreurs']} erreurs";
+            }
+            $message .= '.';
+
+            return redirect()
+                ->route('communication.campaigns.show', [$evenement, $campagne])
+                ->with('success', $message);
         }
 
         return redirect()
-            ->route('communication.campaigns.index', $evenement)
-            ->with('success', 'Campagne enregistrée et traitée avec succès.');
+            ->route('communication.campaigns.show', [$evenement, $campagne])
+            ->with('success', 'Campagne enregistrée en brouillon.');
     }
 
-    /**
-     * Affiche le catalogue de modèles d'emails réutilisables.
-     */
-    public function templates(): Response
+    // ════════════════════════════════════════════
+    //   DÉTAILS D'UNE CAMPAGNE (avec stats + historique)
+    // ════════════════════════════════════════════
+    public function showCampaign(Evenement $evenement, CommunicationCampaign $campaign, EmailCampaignService $service): Response
     {
-        abort_unless(request()->user()?->can('communication.view'), 403);
+        $this->autoriserOrganisateurOuAdmin($evenement);
 
-        return Inertia::render('Communication/Templates/Index', [
-            'templates' => $this->emailTemplates(),
+        // Vérifier que la campagne appartient bien à cet événement
+        abort_unless($campaign->evenement_id === $evenement->id, 404);
+
+        // Charger les envois avec users
+        $envois = EmailLog::where('campagne_id', $campaign->id)
+            ->with('inscription.user:id,prenom,nom,email')
+            ->latest()
+            ->get()
+            ->map(fn (EmailLog $log) => [
+                'id'           => $log->id,
+                'destinataire' => $log->destinataire,
+                'sujet'        => $log->sujet,
+                'statut'       => $log->statut,
+                'erreur'       => $log->erreur,
+                'envoye_at'    => $log->envoye_at?->toIso8601String(),
+                'created_at'   => $log->created_at->toIso8601String(),
+                'user'         => $log->inscription?->user ? [
+                    'id'     => $log->inscription->user->id,
+                    'prenom' => $log->inscription->user->prenom,
+                    'nom'    => $log->inscription->user->nom,
+                ] : null,
+            ]);
+
+        // Stats
+        $stats = [
+            'total'         => $envois->count(),
+            'nb_envoyes'    => $envois->where('statut', 'sent')->count(),
+            'nb_erreurs'    => $envois->where('statut', 'failed')->count(),
+            'nb_en_attente' => $envois->where('statut', 'queued')->count(),
+        ];
+
+        // Aperçu (au cas où c'est encore en brouillon)
+        $apercu = $service->genererApercu($campaign);
+
+        return Inertia::render('Communication/Campaigns/Show', [
+            'evenement' => [
+                'id'    => $evenement->id,
+                'titre' => $evenement->titre,
+            ],
+            'campagne' => [
+                'id'                  => $campaign->id,
+                'objet'               => $campaign->objet,
+                'contenu'             => $campaign->contenu,
+                'mode_destinataires'  => $campaign->mode_destinataires,
+                'statut'              => $campaign->statut,
+                'date_envoi'          => $campaign->date_envoi?->toIso8601String(),
+                'nb_destinataires'    => $campaign->nb_destinataires,
+                'created_at'          => $campaign->created_at->toIso8601String(),
+            ],
+            'envois' => $envois,
+            'stats'  => $stats,
+            'apercu' => $apercu,
+            'cibles' => CommunicationCampaign::ciblesDisponibles(),
         ]);
     }
 
-    /**
-     * @param  array<string, mixed>  $validated
-     * @return array<int, string>
-     */
-    private function resolveCampaignEmails(Evenement $evenement, array $validated): array
+   
+    public function sendExistingCampaign(Evenement $evenement, CommunicationCampaign $campaign, EmailCampaignService $service): RedirectResponse
     {
-        if ($validated['mode_destinataires'] === 'liste_personnalisee') {
-            return collect($validated['emails_personnalises'] ?? [])
-                ->filter()
-                ->unique()
-                ->values()
-                ->all();
+        $this->autoriserOrganisateurOuAdmin($evenement);
+
+        abort_unless($campaign->evenement_id === $evenement->id, 404);
+
+        if ($campaign->statut !== 'brouillon') {
+            return back()->withErrors(['statut' => 'Seuls les brouillons peuvent être envoyés.']);
         }
 
-        return $evenement->inscriptions()
-            ->with('user:id,email')
-            ->get()
-            ->map(fn ($inscription) => $inscription->user?->email)
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
+        $resume = $service->envoyerCampagne($campaign);
+
+        $message = "Campagne envoyée : {$resume['envoyes']} succès";
+        if ($resume['erreurs'] > 0) {
+            $message .= ", {$resume['erreurs']} erreurs";
+        }
+        $message .= '.';
+
+        return back()->with('success', $message);
     }
 
-    /**
-     * @return array<int, array<string, string>>
-     */
-    private function emailTemplates(): array
+  
+    public function previewCampaign(Request $request, EmailCampaignService $service): JsonResponse
     {
-        return [
-            [
-                'id' => 'invitation-standard',
-                'nom' => 'Invitation standard',
-                'objet' => 'Invitation officielle à votre événement',
-                'contenu' => "Bonjour,\n\nNous avons le plaisir de vous inviter à notre événement.\n\nCordialement,\nL'équipe MOOT Event",
-            ],
-            [
-                'id' => 'relance-participant',
-                'nom' => 'Relance participant',
-                'objet' => 'Rappel de participation',
-                'contenu' => "Bonjour,\n\nNous vous rappelons que votre présence est attendue.\n\nMerci,\nL'équipe MOOT Event",
-            ],
-            [
-                'id' => 'merci-presence',
-                'nom' => 'Remerciement après événement',
-                'objet' => 'Merci pour votre participation',
-                'contenu' => "Bonjour,\n\nMerci pour votre participation active à notre événement.\n\nÀ très bientôt,\nL'équipe MOOT Event",
-            ],
-        ];
+        $request->validate([
+            'evenement_id' => ['required', 'exists:evenements,id'],
+            'objet'        => ['required', 'string'],
+            'contenu'      => ['required', 'string'],
+        ]);
+
+        $evenement = Evenement::with('lieu')->findOrFail($request->evenement_id);
+
+        // Trouver un user de test
+        $inscription = Inscription::where('evenement_id', $evenement->id)
+            ->whereIn('statut', ['validee', 'present'])
+            ->with('user')
+            ->first();
+
+        $userTest = $inscription?->user;
+
+        return response()->json([
+            'objet'        => $service->remplacerVariables($request->objet, $userTest, $evenement, $inscription),
+            'corps'        => $service->remplacerVariables($request->contenu, $userTest, $evenement, $inscription),
+            'destinataire' => $userTest?->email ?? '[Aucun destinataire test]',
+        ]);
+    }
+
+    public function templates(): Response
+    {
+        return Inertia::render('Communication/Templates/Index', [
+            'modeles' => CommunicationCampaign::modelesPredefinis(),
+        ]);
+    }
+
+    
+    private function autoriserOrganisateurOuAdmin(Evenement $evenement): void
+    {
+        $user = Auth::user();
+
+        abort_unless(
+            $user->hasAnyRole(['admin', 'responsable_dcirp']) ||
+                ($user->hasRole('organisateur') && $evenement->created_by === $user->id),
+            403,
+            'Vous n\'avez pas accès à cet événement.'
+        );
     }
 }

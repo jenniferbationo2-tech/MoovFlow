@@ -207,6 +207,9 @@ Route::middleware('auth')->group(function () {
           Route::get('campaigns', [CommunicationController::class, 'campaigns'])->name('campaigns.index');
           Route::get('campaigns/create', [CommunicationController::class, 'createCampaign'])->name('campaigns.create');
           Route::post('campaigns/send', [CommunicationController::class, 'sendCampaign'])->name('campaigns.send');
+          Route::get('campaigns/{campaign}', [CommunicationController::class, 'showCampaign'])->name('campaigns.show');
+          Route::post('campaigns/{campaign}/send', [CommunicationController::class, 'sendExistingCampaign'])->name('campaigns.send-existing');
+          Route::post('campaigns/preview', [CommunicationController::class, 'previewCampaign'])->name('campaigns.preview');
 
           Route::get('enquetes', [EnqueteController::class, 'index'])->name('enquetes.index');
           Route::get('enquetes/create', [EnqueteController::class, 'create'])->name('enquetes.create');
@@ -281,17 +284,13 @@ Route::middleware('auth')->group(function () {
           Route::get('enquetes/{enquete}/analyse', [SatisfactionController::class, 'analyse'])->name('satisfaction.analyse');
      });
 
-     // ════════════════════════════════════════
-     //   RAPPORTS & IMPACT RSE
-     // ════════════════════════════════════════
+
      Route::get('/rapports', [\App\Http\Controllers\RapportController::class, 'index'])
           ->name('rapports.index');
      Route::get('/rapports/export-global', [\App\Http\Controllers\RapportController::class, 'exportGlobal'])
           ->name('rapports.export-global');
 
-     // ════════════════════════════════════════
-     //   MODULE 5 - ANALYSE & SUIVI
-     // ════════════════════════════════════════
+
 
      Route::get('/analyses', [\App\Http\Controllers\AnalyseController::class, 'dashboardGlobal'])
           ->name('analyses.global');
@@ -307,10 +306,6 @@ Route::middleware('auth')->group(function () {
      Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
      Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
      Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-
-     // ════════════════════════════════════════════════════
-     //   MODULE 3 - LOGISTIQUE
-     // ════════════════════════════════════════════════════
 
      // ──── MATÉRIEL : Catalogue global ────
      Route::resource('materiels', \App\Http\Controllers\MaterielController::class)
@@ -386,6 +381,41 @@ Route::middleware('auth')->group(function () {
      // ──── VUE GÉNÉRALE LOGISTIQUE ────
      Route::get('/logistique', [\App\Http\Controllers\LogistiqueGeneraleController::class, 'index'])
           ->name('logistique.index');
+
+
+
+     Route::get(
+          'evenements/{evenement}/certificats',
+          [\App\Http\Controllers\CertificatController::class, 'index']
+     )
+          ->name('certificats.index');
+     Route::post(
+          'evenements/{evenement}/certificats/generer',
+          [\App\Http\Controllers\CertificatController::class, 'generer']
+     )
+          ->name('certificats.generer');
+     Route::get(
+          'certificats/{certificat}/telecharger',
+          [\App\Http\Controllers\CertificatController::class, 'telecharger']
+     )
+          ->name('certificats.telecharger');
+     Route::post(
+          'certificats/{certificat}/envoyer-email',
+          [\App\Http\Controllers\CertificatController::class, 'envoyerEmail']
+     )
+          ->name('certificats.envoyer-email');
+
+     // Participant
+     Route::get(
+          'mes-certificats',
+          [\App\Http\Controllers\CertificatController::class, 'mesCertificats']
+     )
+          ->name('mes-certificats.index');
+     Route::get(
+          'mes-certificats/{certificat}/telecharger',
+          [\App\Http\Controllers\CertificatController::class, 'telechargerMien']
+     )
+          ->name('mes-certificats.telecharger');
 });
 
 require __DIR__ . '/auth.php';
