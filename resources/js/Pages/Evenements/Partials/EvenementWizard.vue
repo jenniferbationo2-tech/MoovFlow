@@ -59,9 +59,8 @@ const form = useForm({
     age_max:              props.evenement?.age_max ?? null,
 
     // CONF
-    theme_principal:    props.evenement?.theme_principal ?? '',
-    profession_cible:   props.evenement?.profession_cible ?? '',
     programme_agenda:   props.evenement?.programme_agenda ?? '',
+    conferenciers:      props.evenement?.conferenciers ?? [],
     diffusion_en_ligne: props.evenement?.diffusion_en_ligne ?? false,
     lien_zoom:          props.evenement?.lien_zoom ?? '',
     document_joint:     null,
@@ -175,6 +174,7 @@ const enregistrer = () => {
 const updateField = (key, value) => {
     form[key] = value
 }
+
 </script>
 
 <template>

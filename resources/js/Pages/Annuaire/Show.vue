@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import DashboardLayout from '@/Layouts/DashboardLayout.vue'
+import { $confirm } from '@/plugins/confirm'
 
 const props = defineProps({
     participant:  Object,

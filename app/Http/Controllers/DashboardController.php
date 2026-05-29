@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Models\TypeEvenement;
+use App\Models\CommunicationCampaign;
+use Illuminate\Support\Str;
 
 class DashboardController extends Controller
 {
@@ -36,14 +39,15 @@ class DashboardController extends Controller
         }
 
         return $this->participantDashboard($user);
+       
     }
-
+   
     /**
      * Dashboard ADMIN - Vue système et opérationnelle.
      */
     private function adminDashboard(User $user): Response
     {
-        // ── KPIs OPÉRATIONNELS ──────────────────────
+       
         $kpis = [
             'utilisateurs_actifs' => User::where('is_active', true)->count(),
             'evenements_publies'  => Evenement::where('statut', 'publie')->count(),
@@ -88,7 +92,7 @@ class DashboardController extends Controller
             ])
             ->all();
 
-        // ── RÉPARTITION UTILISATEURS PAR RÔLE ───────
+        
         $repartitionRoles = DB::table('model_has_roles')
             ->join('roles', 'roles.id', '=', 'model_has_roles.role_id')
             ->select('roles.name', DB::raw('COUNT(*) as total'))
@@ -97,7 +101,7 @@ class DashboardController extends Controller
             ->map(fn ($r) => ['role' => $r->name, 'total' => (int) $r->total])
             ->all();
 
-        // ── STATUT ÉVÉNEMENTS ───────────────────────
+       
         $completionEvenements = [
             'brouillon' => Evenement::where('statut', 'brouillon')->count(),
             'publie'    => Evenement::where('statut', 'publie')->count(),
@@ -113,12 +117,12 @@ class DashboardController extends Controller
             'prochainsEvenements'   => $prochainsEvenements,
             'repartitionRoles'      => $repartitionRoles,
             'completionEvenements'  => $completionEvenements,
+            'repartitionTypes'      => $this->getRepartitionTypesEvenements(),
+            'notifications'         => $this->getNotifications($user, 'admin'),
         ]);
     }
 
-    /**
-     * Dashboard RESPONSABLE dCIRP - Vue stratégique RSE.
-     */
+    
     private function responsableDashboard(User $user): Response
     {
         $globalStats = $this->dashboardAggregatorService->getGlobalStats();
@@ -187,12 +191,12 @@ class DashboardController extends Controller
             'statsRSE'            => $statsRSE,
             'performanceTypes'    => $performanceTypes,
             'derniersEvenements'  => $derniersEvenements,
+            'repartitionTypes'    => $this->getRepartitionTypesEvenements(),
+            'notifications'       => $this->getNotifications($user, 'responsable_dcirp'),
         ]);
     }
 
-    /**
-     * Dashboard ORGANISATEUR - Vue opérationnelle.
-     */
+    
     private function organisateurDashboard(User $user): Response
     {
         $kpis = [
@@ -251,17 +255,17 @@ class DashboardController extends Controller
                 'created_at' => optional($i->created_at)?->toIso8601String(),
             ])->all();
 
-        return Inertia::render('Dashboard', [
+       return Inertia::render('Dashboard', [
             'role'             => 'organisateur',
             'kpis'             => $kpis,
             'mesEvenements'    => $mesEvenements,
             'dossiersRecents'  => $dossiersRecents,
+            'notifications'    => $this->getNotifications($user, 'organisateur'),
         ]);
     }
 
-    /**
-     * Dashboard PARTICIPANT - Vue personnelle.
-     */
+    
+
     private function participantDashboard(User $user): Response
     {
         $kpis = [
@@ -319,11 +323,13 @@ class DashboardController extends Controller
                 ] : null,
             ])->all();
 
-        return Inertia::render('Dashboard', [
+        
+       return Inertia::render('Dashboard', [
             'role'                    => 'participant',
             'kpis'                    => $kpis,
             'mesProchainsEvenements'  => $mesProchainsEvenements,
             'recommandes'             => $recommandes,
+            'notifications'           => $this->getNotifications($user, 'participant'),
         ]);
     }
 
@@ -333,5 +339,136 @@ class DashboardController extends Controller
         $presents = Inscription::where('statut', 'present')->count();
 
         return $total > 0 ? round(($presents / $total) * 100, 1) : 0;
+    }
+
+    
+    private function getRepartitionTypesEvenements(): array
+    {
+        return TypeEvenement::query()
+            ->withCount(['evenements as total' => function ($q) {
+                $q->whereIn('statut', ['publie', 'en_cours', 'termine']);
+            }])
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn ($t) => [
+                'code'  => $t->code,
+                'nom'   => $t->nom,
+                'total' => (int) $t->total,
+            ])
+            ->all();
+    }
+
+    
+    private function getNotifications(User $user, string $role): array
+    {
+        $notifications = [];
+
+       
+        if (in_array($role, ['admin', 'responsable_dcirp'])) {
+
+            // Événements à valider
+            $aValiderQuery = Evenement::where('statut', 'en_validation');
+            $aValider = $aValiderQuery->count();
+            if ($aValider > 0) {
+                $premierEv = (clone $aValiderQuery)->first();
+                $notifications[] = [
+                    'type'    => 'warning',
+                    'titre'   => $aValider === 1
+                        ? "1 événement à valider : « " . \Str::limit($premierEv->titre, 40) . " »"
+                        : "{$aValider} événements à valider",
+                    'href'    => $aValider === 1
+                        ? "/evenements/{$premierEv->id}"
+                        : "/evenements?statut=en_validation",
+                    'icon'    => 'document-check',
+                ];
+            }
+
+            // Dossiers inscriptions en attente
+            $dossiersAttente = Inscription::whereIn('statut', ['en_attente', 'en_analyse'])->count();
+            if ($dossiersAttente > 0) {
+                $notifications[] = [
+                    'type'    => 'info',
+                    'titre'   => "{$dossiersAttente} dossier" . ($dossiersAttente > 1 ? 's' : '') . " en attente",
+                    'href'    => '/inscriptions?statut=en_attente',
+                    'icon'    => 'inbox',
+                ];
+            }
+
+            
+            if ($role === 'admin') {
+                $comptesBloques = User::whereNotNull('bloque_jusqu_a')
+                    ->where('bloque_jusqu_a', '>', now())
+                    ->count();
+                if ($comptesBloques > 0) {
+                    $notifications[] = [
+                        'type'    => 'danger',
+                        'titre'   => "{$comptesBloques} compte" . ($comptesBloques > 1 ? 's' : '') . " bloqué" . ($comptesBloques > 1 ? 's' : ''),
+                        'href'    => '/admin/securite',
+                        'icon'    => 'shield',
+                    ];
+                }
+            }
+        }
+
+        
+        if ($role === 'organisateur') {
+
+        // Événements avec demandes de modifications
+            $avecModifsQuery = Evenement::where('created_by', $user->id)
+                ->where('statut', 'brouillon')
+                ->whereNotNull('modifications_demandees');
+            $avecModifs = $avecModifsQuery->count();
+            if ($avecModifs > 0) {
+                $premier = (clone $avecModifsQuery)->first();
+                $notifications[] = [
+                    'type'    => 'warning',
+                    'titre'   => $avecModifs === 1
+                        ? "Modifications demandées pour « " . \Illuminate\Support\Str::limit($premier->titre, 30) . " »"
+                        : "{$avecModifs} événements avec modifications à apporter",
+                    'href'    => $avecModifs === 1
+                        ? "/evenements/{$premier->id}"
+                        : '/evenements?statut=brouillon',
+                    'icon'    => 'edit',
+                ];
+            }
+
+            // Brouillons à finaliser
+            $brouillons = Evenement::where('created_by', $user->id)
+                ->where('statut', 'brouillon')->count();
+            if ($brouillons > 0) {
+                $notifications[] = [
+                    'type'    => 'warning',
+                    'titre'   => "{$brouillons} brouillon" . ($brouillons > 1 ? 's' : '') . " à finaliser",
+                    'href'    => '/evenements?statut=brouillon',
+                    'icon'    => 'edit',
+                ];
+            }
+
+            // Dossiers en attente pour SES événements
+            $dossiersMienAttente = Inscription::whereHas('evenement',
+                fn ($q) => $q->where('created_by', $user->id))
+                ->whereIn('statut', ['en_attente', 'en_analyse'])
+                ->count();
+            if ($dossiersMienAttente > 0) {
+                $notifications[] = [
+                    'type'    => 'info',
+                    'titre'   => "{$dossiersMienAttente} candidature" . ($dossiersMienAttente > 1 ? 's' : '') . " à analyser",
+                    'href'    => '/inscriptions?statut=en_attente',
+                    'icon'    => 'inbox',
+                ];
+            }
+        }
+
+        // Si aucune notification → message positif
+        if (empty($notifications)) {
+            $notifications[] = [
+                'type'    => 'success',
+                'titre'   => 'Tout est à jour !',
+                'href'    => null,
+                'icon'    => 'check',
+            ];
+        }
+
+        return $notifications;
     }
 }

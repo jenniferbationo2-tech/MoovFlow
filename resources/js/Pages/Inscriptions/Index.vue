@@ -11,7 +11,63 @@ const props = defineProps({
     userRole:     { type: Object, required: true },
 })
 
-// Filtres locaux
+// ═══ MODE D'AFFICHAGE (liste ou grouped) ═══
+const modeAffichage = ref(localStorage.getItem('inscriptionsMode') || 'grouped')
+
+const changerMode = (mode) => {
+    modeAffichage.value = mode
+    localStorage.setItem('inscriptionsMode', mode)
+}
+
+// ═══ GROUPAGE PAR ÉVÉNEMENT ═══
+const inscriptionsGroupees = computed(() => {
+    const groupes = {}
+
+    // Initialiser tous les événements de la liste (même sans inscription)
+    props.evenements.forEach(ev => {
+        groupes[ev.id] = {
+            evenement: ev,
+            inscriptions: [],
+        }
+    })
+
+    // Distribuer les inscriptions dans les groupes
+    props.inscriptions.data.forEach(insc => {
+        const eventId = insc.evenement?.id
+        if (!eventId) return
+
+        if (!groupes[eventId]) {
+            groupes[eventId] = {
+                evenement: insc.evenement,
+                inscriptions: [],
+            }
+        }
+        groupes[eventId].inscriptions.push(insc)
+    })
+
+    // Trier : événements avec inscriptions en premier, par nombre décroissant
+    return Object.values(groupes)
+        .filter(g => g.inscriptions.length > 0 || filtres.value.evenement_id === g.evenement.id)
+        .sort((a, b) => b.inscriptions.length - a.inscriptions.length)
+})
+
+// ═══ SECTIONS PLIABLES ═══
+const sectionsOuvertes = ref({})
+
+const toggleSection = (evenementId) => {
+    sectionsOuvertes.value[evenementId] = !sectionsOuvertes.value[evenementId]
+}
+
+const estOuverte = (evenementId) => {
+    // Par défaut : ouvert si moins de 4 événements OU si filtre sur cet event
+    if (sectionsOuvertes.value[evenementId] !== undefined) {
+        return sectionsOuvertes.value[evenementId]
+    }
+    return inscriptionsGroupees.value.length <= 3 ||
+           filtres.value.evenement_id == evenementId
+}
+
+// ═══ FILTRES ═══
 const filtres = ref({
     statut:       props.filters.statut || '',
     evenement_id: props.filters.evenement_id || '',
@@ -38,7 +94,7 @@ watch(() => filtres.value.search, () => {
     timeoutId = setTimeout(appliquerFiltres, 400)
 })
 
-// Helpers
+// ═══ HELPERS ═══
 const formaterDate = (d) => {
     if (!d) return '—'
     return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -64,22 +120,74 @@ const labelStatut = (statut) => ({
     confirmee: 'Confirmée', refusee: 'Refusée',
     present: 'Présent', annulee: 'Annulée',
 }[statut] || statut)
+
+const couleurType = (code) => ({
+    BARA_MOUSSO: 'bg-rose-50 text-rose-700 border-rose-200',
+    CONF: 'bg-blue-50 text-blue-700 border-blue-200',
+    SPORT: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+    CHALLENGE: 'bg-violet-50 text-violet-700 border-violet-200',
+    FORMATION: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    HACK: 'bg-orange-50 text-orange-700 border-orange-200',
+    SALON: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+}[code] || 'bg-slate-50 text-slate-700 border-slate-200')
+
+// ═══ STATS PAR ÉVÉNEMENT ═══
+const statsEvenement = (inscriptions) => {
+    const stats = {
+        total: inscriptions.length,
+        en_attente: 0,
+        acceptees: 0,
+        refusees: 0,
+    }
+    inscriptions.forEach(i => {
+        if (['preinscrit', 'preselectionne', 'dossier_soumis', 'en_analyse', 'recommandee'].includes(i.statut)) {
+            stats.en_attente++
+        } else if (['acceptee', 'confirmee', 'present'].includes(i.statut)) {
+            stats.acceptees++
+        } else if (i.statut === 'refusee') {
+            stats.refusees++
+        }
+    })
+    return stats
+}
 </script>
 
 <template>
     <DashboardLayout>
 
         <!-- En-tête -->
-        <div class="mb-6">
-            <p class="text-xs font-bold uppercase tracking-wider text-text-muted">
-                Gestion staff
-            </p>
-            <h1 class="mt-1 font-display text-2xl font-extrabold text-text-main">
-                Inscriptions
-            </h1>
-            <p class="mt-1 text-sm text-text-sub">
-                {{ userRole.estResponsable ? 'Toutes les inscriptions de la plateforme' : 'Inscriptions à vos événements' }}
-            </p>
+        <div class="mb-6 flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <p class="text-xs font-bold uppercase tracking-wider text-text-muted">
+                    Gestion staff
+                </p>
+                <h1 class="mt-1 font-display text-2xl font-extrabold text-text-main">
+                    Dossiers d'inscriptions
+                </h1>
+                <p class="mt-1 text-sm text-text-sub">
+                    {{ userRole.estResponsable ? 'Toutes les inscriptions de la plateforme' : 'Inscriptions à vos événements' }}
+                </p>
+            </div>
+
+            <!-- Toggle mode d'affichage -->
+            <div class="inline-flex rounded-lg border-2 border-border-soft bg-white p-1">
+                <button @click="changerMode('grouped')"
+                    :class="['inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-bold transition',
+                        modeAffichage === 'grouped' ? 'bg-moov-blue text-white' : 'text-text-sub hover:bg-page-bg']">
+                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7"/>
+                    </svg>
+                    Par événement
+                </button>
+                <button @click="changerMode('liste')"
+                    :class="['inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-bold transition',
+                        modeAffichage === 'liste' ? 'bg-moov-blue text-white' : 'text-text-sub hover:bg-page-bg']">
+                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                    </svg>
+                    Liste
+                </button>
+            </div>
         </div>
 
         <!-- KPIs cliquables -->
@@ -89,86 +197,60 @@ const labelStatut = (statut) => ({
                     :class="['rounded-xl p-4 text-left shadow-card transition hover:shadow-card-hover',
                         !filtres.statut ? 'bg-moov-noir text-white' : 'bg-white']">
                 <p :class="['text-xs font-bold uppercase tracking-wider',
-                    !filtres.statut ? 'text-white/60' : 'text-text-muted']">
-                    Total
-                </p>
+                    !filtres.statut ? 'text-white/60' : 'text-text-muted']">Total</p>
                 <p :class="['mt-2 font-display text-2xl font-extrabold',
-                    !filtres.statut ? 'text-moov-orange' : 'text-text-main']">
-                    {{ kpis.total }}
-                </p>
+                    !filtres.statut ? 'text-moov-orange' : 'text-text-main']">{{ kpis.total }}</p>
             </button>
 
             <button @click="filtres.statut = 'preinscrit'; appliquerFiltres()"
                     :class="['rounded-xl p-4 text-left shadow-card transition hover:shadow-card-hover',
                         filtres.statut === 'preinscrit' ? 'bg-amber-500 text-white' : 'bg-white']">
                 <p :class="['text-xs font-bold uppercase tracking-wider',
-                    filtres.statut === 'preinscrit' ? 'text-white/70' : 'text-text-muted']">
-                    Pré-inscrits
-                </p>
+                    filtres.statut === 'preinscrit' ? 'text-white/70' : 'text-text-muted']">Pré-inscrits</p>
                 <p :class="['mt-2 font-display text-2xl font-extrabold',
-                    filtres.statut === 'preinscrit' ? 'text-white' : 'text-amber-600']">
-                    {{ kpis.preinscrits }}
-                </p>
+                    filtres.statut === 'preinscrit' ? 'text-white' : 'text-amber-600']">{{ kpis.preinscrits }}</p>
             </button>
 
             <button @click="filtres.statut = 'dossier_soumis'; appliquerFiltres()"
                     :class="['rounded-xl p-4 text-left shadow-card transition hover:shadow-card-hover',
                         filtres.statut === 'dossier_soumis' ? 'bg-indigo-500 text-white' : 'bg-white']">
                 <p :class="['text-xs font-bold uppercase tracking-wider',
-                    filtres.statut === 'dossier_soumis' ? 'text-white/70' : 'text-text-muted']">
-                    À analyser
-                </p>
+                    filtres.statut === 'dossier_soumis' ? 'text-white/70' : 'text-text-muted']">À analyser</p>
                 <p :class="['mt-2 font-display text-2xl font-extrabold',
-                    filtres.statut === 'dossier_soumis' ? 'text-white' : 'text-indigo-600']">
-                    {{ kpis.a_analyser }}
-                </p>
+                    filtres.statut === 'dossier_soumis' ? 'text-white' : 'text-indigo-600']">{{ kpis.a_analyser }}</p>
             </button>
 
             <button @click="filtres.statut = 'recommandee'; appliquerFiltres()"
                     :class="['rounded-xl p-4 text-left shadow-card transition hover:shadow-card-hover',
                         filtres.statut === 'recommandee' ? 'bg-cyan-500 text-white' : 'bg-white']">
                 <p :class="['text-xs font-bold uppercase tracking-wider',
-                    filtres.statut === 'recommandee' ? 'text-white/70' : 'text-text-muted']">
-                    Recommandées
-                </p>
+                    filtres.statut === 'recommandee' ? 'text-white/70' : 'text-text-muted']">Recommandées</p>
                 <p :class="['mt-2 font-display text-2xl font-extrabold',
-                    filtres.statut === 'recommandee' ? 'text-white' : 'text-cyan-600']">
-                    {{ kpis.recommandees }}
-                </p>
+                    filtres.statut === 'recommandee' ? 'text-white' : 'text-cyan-600']">{{ kpis.recommandees }}</p>
             </button>
 
             <button @click="filtres.statut = 'confirmee'; appliquerFiltres()"
                     :class="['rounded-xl p-4 text-left shadow-card transition hover:shadow-card-hover',
                         filtres.statut === 'confirmee' ? 'bg-emerald-500 text-white' : 'bg-white']">
                 <p :class="['text-xs font-bold uppercase tracking-wider',
-                    filtres.statut === 'confirmee' ? 'text-white/70' : 'text-text-muted']">
-                    Acceptées
-                </p>
+                    filtres.statut === 'confirmee' ? 'text-white/70' : 'text-text-muted']">Acceptées</p>
                 <p :class="['mt-2 font-display text-2xl font-extrabold',
-                    filtres.statut === 'confirmee' ? 'text-white' : 'text-emerald-600']">
-                    {{ kpis.acceptees }}
-                </p>
+                    filtres.statut === 'confirmee' ? 'text-white' : 'text-emerald-600']">{{ kpis.acceptees }}</p>
             </button>
 
             <button @click="filtres.statut = 'refusee'; appliquerFiltres()"
                     :class="['rounded-xl p-4 text-left shadow-card transition hover:shadow-card-hover',
                         filtres.statut === 'refusee' ? 'bg-red-500 text-white' : 'bg-white']">
                 <p :class="['text-xs font-bold uppercase tracking-wider',
-                    filtres.statut === 'refusee' ? 'text-white/70' : 'text-text-muted']">
-                    Refusées
-                </p>
+                    filtres.statut === 'refusee' ? 'text-white/70' : 'text-text-muted']">Refusées</p>
                 <p :class="['mt-2 font-display text-2xl font-extrabold',
-                    filtres.statut === 'refusee' ? 'text-white' : 'text-red-600']">
-                    {{ kpis.refusees }}
-                </p>
+                    filtres.statut === 'refusee' ? 'text-white' : 'text-red-600']">{{ kpis.refusees }}</p>
             </button>
         </div>
 
         <!-- Filtres avancés -->
         <div class="mb-6 rounded-xl bg-white p-5 shadow-card">
             <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
-
-                <!-- Recherche -->
                 <div class="md:col-span-2">
                     <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">
                         Rechercher
@@ -177,8 +259,6 @@ const labelStatut = (statut) => ({
                            placeholder="Nom, prénom ou email..."
                            class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none transition focus:border-moov-blue"/>
                 </div>
-
-                <!-- Événement -->
                 <div>
                     <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">
                         Événement
@@ -189,8 +269,6 @@ const labelStatut = (statut) => ({
                         <option v-for="e in evenements" :key="e.id" :value="e.id">{{ e.titre }}</option>
                     </select>
                 </div>
-
-                <!-- Niveau -->
                 <div>
                     <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-text-sub">
                         Niveau
@@ -204,7 +282,6 @@ const labelStatut = (statut) => ({
                 </div>
             </div>
 
-            <!-- Actions -->
             <div class="mt-3 flex items-center justify-between gap-2 border-t border-border-soft pt-3">
                 <p class="text-xs text-text-muted">
                     {{ inscriptions.total }} inscription(s) trouvée(s)
@@ -216,15 +293,138 @@ const labelStatut = (statut) => ({
             </div>
         </div>
 
-        <!-- Liste -->
-        <div v-if="inscriptions.data.length > 0" class="space-y-2">
+        <!-- ═══════════════════════════════════════ -->
+        <!-- VUE GROUPÉE PAR ÉVÉNEMENT (par défaut) -->
+        <!-- ═══════════════════════════════════════ -->
+        <div v-if="modeAffichage === 'grouped' && inscriptions.data.length > 0" class="space-y-4">
+
+            <div v-for="groupe in inscriptionsGroupees" :key="groupe.evenement.id"
+                 class="overflow-hidden rounded-xl bg-white shadow-card">
+
+                <!-- En-tête du groupe (cliquable) -->
+                <button @click="toggleSection(groupe.evenement.id)"
+                    class="w-full border-l-4 px-5 py-4 text-left transition hover:bg-page-bg/50"
+                    :class="[
+                        couleurType(groupe.evenement.type_evenement?.code).replace('bg-', 'border-l-').replace('-50', '-500').split(' ')[0],
+                    ]">
+
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="flex items-start gap-3 min-w-0 flex-1">
+                            <!-- Badge type -->
+                            <span :class="['flex-shrink-0 rounded-md border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider',
+                                couleurType(groupe.evenement.type_evenement?.code)]">
+                                {{ groupe.evenement.type_evenement?.nom ?? '—' }}
+                            </span>
+
+                            <div class="min-w-0 flex-1">
+                                <h3 class="truncate font-display text-base font-extrabold text-text-main">
+                                    {{ groupe.evenement.titre }}
+                                </h3>
+                                <p v-if="groupe.evenement.date_debut" class="mt-0.5 text-xs text-text-sub">
+                                    {{ formaterDate(groupe.evenement.date_debut) }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Stats + Toggle -->
+                        <div class="flex items-center gap-4">
+                            <!-- Stats rapides -->
+                            <div class="hidden sm:flex items-center gap-3 text-xs">
+                                <span v-if="statsEvenement(groupe.inscriptions).en_attente > 0"
+                                      class="flex items-center gap-1">
+                                    <span class="h-2 w-2 rounded-full bg-amber-500"/>
+                                    <span class="font-bold text-amber-700">{{ statsEvenement(groupe.inscriptions).en_attente }}</span>
+                                </span>
+                                <span v-if="statsEvenement(groupe.inscriptions).acceptees > 0"
+                                      class="flex items-center gap-1">
+                                    <span class="h-2 w-2 rounded-full bg-emerald-500"/>
+                                    <span class="font-bold text-emerald-700">{{ statsEvenement(groupe.inscriptions).acceptees }}</span>
+                                </span>
+                                <span v-if="statsEvenement(groupe.inscriptions).refusees > 0"
+                                      class="flex items-center gap-1">
+                                    <span class="h-2 w-2 rounded-full bg-red-500"/>
+                                    <span class="font-bold text-red-700">{{ statsEvenement(groupe.inscriptions).refusees }}</span>
+                                </span>
+                            </div>
+
+                            <!-- Total -->
+                            <span class="flex h-9 min-w-[36px] items-center justify-center rounded-lg bg-moov-blue px-2.5 font-display text-sm font-extrabold text-white">
+                                {{ groupe.inscriptions.length }}
+                            </span>
+
+                            <!-- Icône toggle -->
+                            <svg :class="['h-5 w-5 text-text-muted transition-transform',
+                                estOuverte(groupe.evenement.id) ? 'rotate-180' : '']"
+                                fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+                </button>
+
+                <!-- Liste des inscriptions (pliable) -->
+                <div v-if="estOuverte(groupe.evenement.id)" class="divide-y divide-border-soft border-t border-border-soft">
+
+                    <div v-if="groupe.inscriptions.length === 0" class="p-8 text-center">
+                        <p class="text-sm text-text-sub">Aucune inscription pour cet événement</p>
+                    </div>
+
+                    <Link v-for="insc in groupe.inscriptions" :key="insc.id"
+                          :href="`/inscriptions/${insc.id}`"
+                          class="block px-5 py-4 transition hover:bg-page-bg/50">
+
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div class="min-w-0 flex-1">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <h4 class="font-bold text-text-main">
+                                        {{ insc.user?.prenom }} {{ insc.user?.nom }}
+                                    </h4>
+                                    <span :class="['inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold',
+                                        couleurStatut(insc.statut).bg, couleurStatut(insc.statut).text]">
+                                        <span :class="['h-1.5 w-1.5 rounded-full', couleurStatut(insc.statut).dot]"/>
+                                        {{ labelStatut(insc.statut) }}
+                                    </span>
+                                    <span v-if="insc.niveau_inscription === 'niveau_2'"
+                                          class="rounded bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-violet-700">
+                                        Dossier complet
+                                    </span>
+                                </div>
+                                <p class="mt-1 text-xs text-text-sub">
+                                    {{ insc.user?.email }}
+                                    <span v-if="insc.user?.telephone"> · {{ insc.user.telephone }}</span>
+                                </p>
+                                <p class="mt-1 text-[11px] text-text-muted">
+                                    Soumis le {{ formaterDate(insc.created_at) }}
+                                    <span v-if="insc.qr_code"> · Réf : <span class="font-mono font-bold">{{ insc.qr_code }}</span></span>
+                                </p>
+                            </div>
+
+                            <span class="flex-shrink-0 text-moov-blue">
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+                                </svg>
+                            </span>
+                        </div>
+
+                        <p v-if="insc.statut === 'refusee' && insc.motif_refus"
+                           class="mt-2 rounded-lg bg-red-50 border-l-4 border-red-500 px-3 py-2 text-xs text-red-800">
+                            <strong>Motif :</strong> {{ insc.motif_refus }}
+                        </p>
+                    </Link>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════ -->
+        <!-- VUE LISTE (mode classique)              -->
+        <!-- ═══════════════════════════════════════ -->
+        <div v-else-if="modeAffichage === 'liste' && inscriptions.data.length > 0" class="space-y-2">
+
             <Link v-for="insc in inscriptions.data" :key="insc.id"
                   :href="`/inscriptions/${insc.id}`"
                   class="block rounded-xl bg-white p-5 shadow-card transition hover:shadow-card-hover">
 
                 <div class="flex flex-wrap items-start justify-between gap-3">
-
-                    <!-- Infos candidat -->
                     <div class="min-w-0 flex-1">
                         <div class="flex flex-wrap items-center gap-2">
                             <h3 class="font-display text-base font-extrabold text-text-main">
@@ -242,7 +442,8 @@ const labelStatut = (statut) => ({
                         </div>
 
                         <p class="mt-1 text-xs text-text-sub">
-                            {{ insc.user?.email }} <span v-if="insc.user?.telephone">· {{ insc.user.telephone }}</span>
+                            {{ insc.user?.email }}
+                            <span v-if="insc.user?.telephone"> · {{ insc.user.telephone }}</span>
                         </p>
 
                         <p class="mt-2 text-sm font-bold text-text-main">
@@ -253,25 +454,19 @@ const labelStatut = (statut) => ({
                         </p>
                     </div>
 
-                    <!-- Actions visuelles -->
                     <div class="flex flex-col items-end gap-2">
-                        <p class="text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                            Soumis le
-                        </p>
-                        <p class="text-xs font-medium text-text-main">
-                            {{ formaterDate(insc.created_at) }}
-                        </p>
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-text-muted">Soumis le</p>
+                        <p class="text-xs font-medium text-text-main">{{ formaterDate(insc.created_at) }}</p>
                     </div>
                 </div>
 
-                <!-- Motif refus si refusée -->
                 <p v-if="insc.statut === 'refusee' && insc.motif_refus"
                    class="mt-3 rounded-lg bg-red-50 border-l-4 border-red-500 px-3 py-2 text-xs text-red-800">
                     <strong>Motif :</strong> {{ insc.motif_refus }}
                 </p>
             </Link>
 
-            <!-- Pagination -->
+            <!-- Pagination (vue liste seulement) -->
             <div v-if="inscriptions.last_page > 1" class="mt-6 flex items-center justify-center gap-2">
                 <Link v-for="link in inscriptions.links" :key="link.label"
                       :href="link.url || ''"
@@ -289,9 +484,7 @@ const labelStatut = (statut) => ({
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
             </svg>
             <p class="mt-4 font-bold text-text-main">Aucune inscription trouvée</p>
-            <p class="mt-1 text-sm text-text-sub">
-                Essayez de modifier les filtres
-            </p>
+            <p class="mt-1 text-sm text-text-sub">Essayez de modifier les filtres</p>
         </div>
     </DashboardLayout>
 </template>

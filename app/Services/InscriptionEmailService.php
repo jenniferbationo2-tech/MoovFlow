@@ -38,8 +38,11 @@ class InscriptionEmailService
             return $log;
         }
 
-        // Tentative d'envoi
+      
         try {
+            
+            set_time_limit(60);
+
             Mail::to($destinataire)
                 ->send(new InscriptionMail($inscription, $type, $donnees));
 
@@ -48,6 +51,7 @@ class InscriptionEmailService
             Log::info("Email envoyé : type={$type}, inscription_id={$inscription->id}, dest={$destinataire}");
 
         } catch (\Exception $e) {
+            // On NE bloque PAS l'inscription si l'email échoue
             $log->marquerEchec($e->getMessage());
 
             Log::error("Échec envoi email : type={$type}, inscription_id={$inscription->id}, erreur={$e->getMessage()}");

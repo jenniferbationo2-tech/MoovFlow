@@ -14,72 +14,94 @@ use Inertia\Response;
 
 class EvenementController extends Controller
 {
-    /**
-     * Liste publique des événements.
-     */
+
     public function index(Request $request): Response
     {
+        $now = now();
+        $user = Auth::user();
+        $estStaff = $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']);
+
         $query = Evenement::query()
-            ->with(['typeEvenement', 'lieu'])
+            ->with(['typeEvenement', 'lieu', 'tarifs'])
             ->withCount('inscriptions');
 
-        // Filtrage par type
+
         if ($request->filled('type')) {
-            $query->whereHas('typeEvenement', fn ($q) => $q->where('code', $request->type));
+            $query->whereHas('typeEvenement', fn($q) => $q->where('code', $request->type));
         }
 
-        // Si non-staff : uniquement les publiés / en_cours / termine
-        $user = Auth::user();
-        if (!$user || !$user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur'])) {
+        // Si non-staff : uniquement les publiés / en_cours / terminé
+        if (!$estStaff) {
             $query->whereIn('statut', ['publie', 'en_cours', 'termine']);
         }
 
         $evenements = $query->latest('date_debut')->paginate(12);
 
-        // Tous les types pour le filtre
+        // ─── CALCUL DES KPIs (basé sur tous les events visibles) ────
+        $statutsAffichables = ['publie', 'en_cours', 'termine'];
+        $baseQueryKpi = Evenement::query()
+            ->whereIn('statut', $statutsAffichables);
+
+        $totalEvenements = (clone $baseQueryKpi)
+            ->whereIn('statut', ['publie', 'en_cours'])  // À venir ou en cours seulement
+            ->count();
+
+        $enCoursCount = (clone $baseQueryKpi)
+            ->where('date_debut', '<=', $now)
+            ->where('date_fin', '>=', $now)
+            ->count();
+
+        $typologiesCount = TypeEvenement::count();
+
         $types = TypeEvenement::orderBy('nom')->get();
 
         return Inertia::render('Evenements/Index', [
             'evenements' => $evenements,
             'types'      => $types,
             'filters'    => $request->only(['type']),
+            'kpis'       => [
+                'total'      => $totalEvenements,
+                'en_cours'   => $enCoursCount,
+                'typologies' => $typologiesCount,
+            ],
+            'now'        => $now->toIso8601String(),  // Date courante pour statuts dynamiques côté Vue
         ]);
     }
 
-   
+
     public function show(Evenement $evenement): Response
-{
-    $evenement->load([
-        'typeEvenement',
-        'lieu',
-        'tarifs',
-    ]);
+    {
+        $evenement->load([
+            'typeEvenement',
+            'lieu',
+            'tarifs',
+        ]);
 
-    try {
-        $evenement->load('objectifsRse');
-    } catch (\Exception $e) {
-        // Relation non existante, on ignore
+        try {
+            $evenement->load('objectifsRse');
+        } catch (\Exception $e) {
+            // Relation non existante, on ignore
+        }
+
+
+        $postesBenevoles = $evenement->postesBenevoles()
+            ->where('statut', 'ouvert')
+            ->withCount(['candidatures as places_acceptees' => function ($q) {
+                $q->where('statut', 'accepte');
+            }])
+            ->get()
+            ->map(function ($poste) {
+                $poste->places_restantes = max(0, $poste->places_max - $poste->places_acceptees);
+                return $poste;
+            })
+            ->filter(fn($p) => $p->places_restantes > 0)
+            ->values();
+
+        return Inertia::render('Evenements/Show', [
+            'evenement'       => $evenement,
+            'postesBenevoles' => $postesBenevoles,  // 🆕
+        ]);
     }
-
-    
-    $postesBenevoles = $evenement->postesBenevoles()
-        ->where('statut', 'ouvert')
-        ->withCount(['candidatures as places_acceptees' => function ($q) {
-            $q->where('statut', 'accepte');
-        }])
-        ->get()
-        ->map(function ($poste) {
-            $poste->places_restantes = max(0, $poste->places_max - $poste->places_acceptees);
-            return $poste;
-        })
-        ->filter(fn ($p) => $p->places_restantes > 0)
-        ->values();
-
-    return Inertia::render('Evenements/Show', [
-        'evenement'       => $evenement,
-        'postesBenevoles' => $postesBenevoles,  // 🆕
-    ]);
-}
 
     /**
      * Affichage du formulaire de création (wizard).
@@ -135,17 +157,18 @@ class EvenementController extends Controller
             'tarifs.*.montant'     => ['required_with:tarifs', 'numeric', 'min:0'],
         ];
 
-        // ── VALIDATION CONDITIONNELLE PAR TYPE ──
+
         $rules = array_merge($rules, $this->getReglesValidationParType($typeCode));
 
         $validated = $request->validate($rules);
 
-        // ── PRÉPARATION DES DONNÉES ──
         $data = collect($validated)
             ->except(['visuel', 'reglement_pdf', 'tarifs'])
             ->merge([
-                'statut'     => 'brouillon',
-                'created_by' => Auth::id(),
+                'statut'        => Auth::user()->hasRole('responsable_dcirp') ? 'publie' : 'brouillon',
+                'created_by'    => Auth::id(),
+                'validated_by'  => Auth::user()->hasRole('responsable_dcirp') ? Auth::id() : null,
+                'date_publication' => Auth::user()->hasRole('responsable_dcirp') ? now() : null,
             ])
             ->toArray();
 
@@ -173,13 +196,16 @@ class EvenementController extends Controller
             }
         }
 
+        $estResponsable = Auth::user()->hasRole('responsable_dcirp');
+        $messageSucces = $estResponsable
+            ? 'Événement créé et publié avec succès !'
+            : 'Événement créé en statut Brouillon. Vous pouvez maintenant demander la validation au responsable dCIRP.';
+
         return redirect()->route('evenements.show', $evenement->id)
-            ->with('success', 'Événement créé avec succès en statut Brouillon ! Vous pouvez maintenant demander la validation au responsable dCIRP.');
+            ->with('success', $messageSucces);
     }
 
-    /**
-     * Affichage du formulaire d'édition.
-     */
+
     public function edit(Evenement $evenement): Response
     {
         $this->authorizeEdition($evenement);
@@ -336,6 +362,50 @@ class EvenementController extends Controller
         return back()->with('success', 'Événement renvoyé en brouillon avec motif.');
     }
 
+    /**
+     * Demander des modifications à l'organisateur avant validation.
+     * L'événement repasse en "brouillon" et l'organisateur est notifié.
+     */
+    public function demanderModifications(Request $request, Evenement $evenement): RedirectResponse
+    {
+        $user = Auth::user();
+
+        // Seul un responsable peut demander des modifications
+        abort_unless(
+            $user && $user->hasRole('responsable_dcirp'),
+            403,
+            'Seul le responsable dCIRP peut demander des modifications.'
+        );
+
+        // L'événement doit être en validation
+        abort_unless(
+            in_array($evenement->statut, ['en_validation', 'brouillon']),
+            422,
+            'Cet événement ne peut pas faire l\'objet d\'une demande de modifications.'
+        );
+
+        // Validation du message
+        $validated = $request->validate([
+            'modifications_demandees' => ['required', 'string', 'min:10', 'max:2000'],
+        ], [
+            'modifications_demandees.required' => 'Veuillez préciser les modifications à apporter.',
+            'modifications_demandees.min' => 'Le message doit contenir au moins 10 caractères.',
+        ]);
+
+        // Mise à jour de l'événement
+        $evenement->update([
+            'statut'                       => 'brouillon',
+            'modifications_demandees'      => $validated['modifications_demandees'],
+            'modifications_demandees_le'   => now(),
+            'modifications_demandees_par'  => $user->id,
+        ]);
+
+      
+        return back()->with('success', 
+            'Demande de modifications envoyée à l\'organisateur. L\'événement repasse en brouillon.'
+        );
+    }
+
     public function updateStatut(Request $request, Evenement $evenement): RedirectResponse
     {
         $user = Auth::user();
@@ -359,9 +429,9 @@ class EvenementController extends Controller
     {
         $user = Auth::user();
         abort_unless(
-            $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']),
+            $user && $user->hasAnyRole(['responsable_dcirp', 'organisateur']),
             403,
-            'Vous n\'êtes pas autorisé à créer des événements.'
+            'Les administrateurs ne peuvent pas créer d\'événements. Seuls le responsable dCIRP et les organisateurs en ont le droit.'
         );
     }
 
@@ -377,7 +447,7 @@ class EvenementController extends Controller
         abort_unless($canEdit, 403, 'Vous n\'êtes pas autorisé à modifier cet événement.');
     }
 
-    
+
     private function getReglesValidationParType(string $typeCode): array
     {
         return match ($typeCode) {
@@ -397,6 +467,11 @@ class EvenementController extends Controller
                 'diffusion_en_ligne' => ['boolean'],
                 'lien_zoom'          => ['nullable', 'url', 'max:500'],
                 'document_joint'     => ['nullable', 'file', 'mimetypes:application/pdf', 'max:10240'],
+                'conferenciers'             => ['nullable', 'array'],
+                'conferenciers.*.prenom'    => ['required_with:conferenciers', 'string', 'max:100'],
+                'conferenciers.*.nom'       => ['required_with:conferenciers', 'string', 'max:100'],
+                'conferenciers.*.fonction'  => ['nullable', 'string', 'max:200'],
+                'conferenciers.*.bio'       => ['nullable', 'string', 'max:1000'],
             ],
             'SPORT' => [
                 'discipline'         => ['nullable', 'string', 'max:100'],
@@ -430,12 +505,12 @@ class EvenementController extends Controller
                 'equipe_min'              => ['nullable', 'integer', 'min:1'],
                 'equipe_max'              => ['nullable', 'integer', 'min:1', 'gte:equipe_min'],
                 'technologies_suggerees'  => ['nullable', 'array'],
-                'technologies_suggerees.*'=> ['string'],
-                'criteres_evaluation_hack'=> ['nullable', 'string', 'max:2000'],
+                'technologies_suggerees.*' => ['string'],
+                'criteres_evaluation_hack' => ['nullable', 'string', 'max:2000'],
             ],
             'SALON' => [
                 'nom_salon_hote'      => ['nullable', 'string', 'max:300'],
-                'organisateur_externe'=> ['nullable', 'string', 'max:300'],
+                'organisateur_externe' => ['nullable', 'string', 'max:300'],
                 'lieu_stand'          => ['nullable', 'string', 'max:200'],
                 'superficie_stand'    => ['nullable', 'integer', 'min:1'],
                 'objectifs_stand'     => ['nullable', 'string', 'max:2000'],

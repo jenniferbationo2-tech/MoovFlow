@@ -21,9 +21,7 @@ class InscriptionController extends Controller
         private readonly InscriptionEmailService $emailService,
     ) {}
 
-    // ════════════════════════════════════════
-    //   VUE STAFF : LISTE DES INSCRIPTIONS
-    // ════════════════════════════════════════
+    
 
     public function index(Request $request): InertiaResponse
     {
@@ -123,9 +121,7 @@ class InscriptionController extends Controller
         ];
     }
 
-    // ════════════════════════════════════════
-    //   NIVEAU 1 : PRÉ-INSCRIPTION
-    // ════════════════════════════════════════
+   
 
     public function create(Evenement $evenement): InertiaResponse|RedirectResponse
     {
@@ -188,11 +184,12 @@ class InscriptionController extends Controller
 
             $inscription->load(['user', 'evenement.typeEvenement', 'evenement.lieu']);
 
-            // Si type CONF/FORMATION : pas de présélection, validation directe
-            if (!$inscription->necessitePreselection()) {
+          
+            try {
                 $this->emailService->envoyer($inscription, EmailLog::TYPE_PREINSCRIPTION_RECUE);
-            } else {
-                $this->emailService->envoyer($inscription, EmailLog::TYPE_PREINSCRIPTION_RECUE);
+            } catch (\Exception $e) {
+                \Log::warning("Email pré-inscription non envoyé (inscription_id={$inscription->id}) : " . $e->getMessage());
+                // On continue, l'inscription est valide
             }
 
             DB::commit();
@@ -423,7 +420,7 @@ class InscriptionController extends Controller
 
         abort_unless($isOwner || $isStaff, 403);
 
-        $inscription->load([
+       $inscription->load([
             'user:id,nom,prenom,email,telephone',
             'evenement.typeEvenement',
             'evenement.lieu',
@@ -431,9 +428,11 @@ class InscriptionController extends Controller
             'recommandeParUser:id,nom,prenom',
             'valideParUser:id,nom,prenom',
             'emailLogs',
+            'dossier',        
+            'tarif',           
+            'paiement',       
         ]);
-
-        // Le staff voit la version Detail (avec workflow)
+      
         if ($isStaff && !$isOwner) {
             return Inertia::render('Inscriptions/Detail', [
                 'inscription' => $inscription,
@@ -535,5 +534,20 @@ class InscriptionController extends Controller
             ]),
             default => $base,
         };
+    }
+
+    
+    public function exportParticipantsPdf(\App\Models\Evenement $evenement, \App\Services\ParticipantsPdfService $pdfService)
+    {
+        $user = Auth::user();
+
+        // Seul le staff peut télécharger
+        abort_unless(
+            $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']),
+            403,
+            'Accès non autorisé.'
+        );
+
+        return $pdfService->genererPdf($evenement);
     }
 }

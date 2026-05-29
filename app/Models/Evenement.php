@@ -83,6 +83,9 @@ class Evenement extends Model
         'superficie_stand',
         'objectifs_stand',
         'objectif_prospects',
+        'modifications_demandees',
+        'modifications_demandees_le',
+        'modifications_demandees_par',
 
     ];
 
@@ -97,6 +100,7 @@ class Evenement extends Model
         'domaines_acceptes'      => 'array',
         'stades_acceptes'        => 'array',
         'technologies_suggerees' => 'array',
+        'conferenciers' => 'array',
 
         'diffusion_en_ligne' => 'boolean',
         'certification'      => 'boolean',
@@ -279,8 +283,8 @@ class Evenement extends Model
     public function materiels(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
     {
         return $this->belongsToMany(Materiel::class, 'evenement_materiel')
-                    ->withPivot(['quantite_prevue', 'quantite_sortie', 'quantite_retournee', 'statut', 'note'])
-                    ->withTimestamps();
+            ->withPivot(['quantite_prevue', 'quantite_sortie', 'quantite_retournee', 'statut', 'note'])
+            ->withTimestamps();
     }
 
     /**
@@ -289,8 +293,8 @@ class Evenement extends Model
     public function prestataires(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
     {
         return $this->belongsToMany(Prestataire::class, 'evenement_prestataire')
-                    ->withPivot(['prestation', 'montant_prevu', 'montant_final', 'statut', 'contrat_pdf', 'note'])
-                    ->withTimestamps();
+            ->withPivot(['prestation', 'montant_prevu', 'montant_final', 'statut', 'contrat_pdf', 'note'])
+            ->withTimestamps();
     }
 
     /**

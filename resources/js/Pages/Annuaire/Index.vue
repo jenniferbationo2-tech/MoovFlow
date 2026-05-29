@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import DashboardLayout from '@/Layouts/DashboardLayout.vue'
+import { $confirm } from '@/plugins/confirm'
 
 const props = defineProps({
     participants: Object,
@@ -10,7 +11,7 @@ const props = defineProps({
     filters:      Object,
 })
 
-// ── FILTRES ──────────────────────────────
+
 const recherche       = ref(props.filters?.search ?? '')
 const filtreEvenement = ref(props.filters?.evenement_id ?? '')
 const filtreStatut    = ref(props.filters?.statut ?? '')
@@ -30,7 +31,7 @@ const reinitialiser = () => {
     router.get('/annuaire')
 }
 
-// ── HELPERS ──────────────────────────────
+
 const formaterDate = (d) => {
     if (!d) return '—'
     return new Date(d).toLocaleDateString('fr-FR', {

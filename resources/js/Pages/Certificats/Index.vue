@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import DashboardLayout from '@/Layouts/DashboardLayout.vue'
+import { $confirm } from '@/plugins/confirm'
 
 const props = defineProps({
     evenement:              { type: Object, required: true },
@@ -10,7 +11,6 @@ const props = defineProps({
     presentsSansCertificat: { type: Array, default: () => [] },
 })
 
-// ─── HELPERS ────────────────────────
 const formatDate = (d) => d
     ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
     : '—'
@@ -22,16 +22,15 @@ const formatDateLong = (d) => d
 const initiales = (user) =>
     `${user?.prenom?.[0] ?? ''}${user?.nom?.[0] ?? ''}`.toUpperCase() || 'U'
 
-// ─── ACTIONS ────────────────────────
 const genererTous = () => {
-    if (!confirm(`Générer ${props.kpis.certificats_a_generer ?? 0} certificat(s) pour les participants présents ?`)) return
+    if (await !$confirm(`Générer ${props.kpis.certificats_a_generer ?? 0} certificat(s) pour les participants présents ?`)) return
     router.post(`/evenements/${props.evenement.id}/certificats/generer`, {}, {
         preserveScroll: true,
     })
 }
 
 const envoyerEmail = (certificat) => {
-    if (!confirm(`Envoyer le certificat à ${certificat.user.email} ?`)) return
+    if (await !$confirm(`Envoyer le certificat à ${certificat.user.email} ?`)) return
     router.post(`/certificats/${certificat.id}/envoyer-email`, {}, {
         preserveScroll: true,
     })
@@ -43,20 +42,18 @@ const peutGenerer = computed(() => (props.kpis.certificats_a_generer ?? 0) > 0)
 <template>
     <DashboardLayout>
 
-        <!-- ─── RETOUR ─── -->
         <Link :href="`/evenements/${evenement.id}`"
               class="mb-4 inline-flex items-center gap-2 text-sm font-bold text-text-sub hover:text-moov-blue">
-            ← Retour à l'événement
+             Retour à l'événement
         </Link>
 
-        <!-- ─── EN-TÊTE ─── -->
         <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
             <div class="min-w-0 flex-1">
                 <p class="text-xs font-bold uppercase tracking-wider text-text-muted">
-                    Post-événement · Certificats
+                    Post-événement  Certificats
                 </p>
                 <h1 class="mt-1 font-display text-2xl font-extrabold text-text-main sm:text-3xl">
-                    🎓 Certificats de participation
+                     Certificats de participation
                 </h1>
                 <p class="mt-1 text-sm text-text-sub">
                     {{ evenement.titre }}

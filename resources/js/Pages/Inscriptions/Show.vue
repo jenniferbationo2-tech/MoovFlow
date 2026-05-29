@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import PublicLayout from '@/Layouts/PublicLayout.vue'
+import { $confirm } from '@/plugins/confirm'
 
 const props = defineProps({
     inscription: { type: Object, required: true },
@@ -75,8 +76,8 @@ const lienDossierComplet = computed(() => {
     return `/inscriptions/${props.inscription.id}/dossier-complet`
 })
 
-const annuler = () => {
-    if (confirm('Annuler définitivement cette inscription ?')) {
+const annuler = async () => {
+    if (await $confirm('Annuler définitivement cette inscription ?')) {
         router.post(`/inscriptions/${props.inscription.id}/annuler`)
     }
 }

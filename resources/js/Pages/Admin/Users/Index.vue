@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { Link, useForm, router } from '@inertiajs/vue3'
 import DashboardLayout from '@/Layouts/DashboardLayout.vue'
+import { $confirm } from '@/plugins/confirm'
 
 const props = defineProps({
     users:            Object,
@@ -10,7 +11,7 @@ const props = defineProps({
     filters:          Object,
 })
 
-// ── FILTRES ──────────────────────────────
+
 const recherche    = ref(props.filters?.search ?? '')
 const filtreRole   = ref(props.filters?.role ?? '')
 const filtreStatut = ref(props.filters?.statut ?? '')
@@ -30,7 +31,7 @@ const reinitialiser = () => {
     router.get('/admin/users')
 }
 
-// ── HELPERS ──────────────────────────────
+ 
 const labelRole = (role) => ({
     admin:             'Administrateur',
     responsable_dcirp: 'Responsable dCIRP',
@@ -68,7 +69,7 @@ const statutUtilisateur = (u) => {
     return { label: 'Actif', text: 'text-emerald-700', dot: 'bg-emerald-500' }
 }
 
-// ── MODALE CRÉATION ──────────────────────
+
 const modalCreationOuvert = ref(false)
 
 const formCreation = useForm({
@@ -93,7 +94,7 @@ const creerUtilisateur = () => {
     })
 }
 
-// ── MODALE RESET MDP ─────────────────────
+
 const userResetMdp = ref(null)
 const formResetMdp = useForm({ password: '' })
 
@@ -109,7 +110,6 @@ const confirmerResetMdp = () => {
     })
 }
 
-// ── ACTIONS ──────────────────────────────
 const toggleActif = (user) => {
     const action = user.is_active ? 'désactiver' : 'activer'
     if (confirm(`Voulez-vous vraiment ${action} le compte de ${user.prenom} ${user.nom} ?`)) {
@@ -118,7 +118,7 @@ const toggleActif = (user) => {
 }
 
 const debloquer = (user) => {
-    if (confirm(`Débloquer le compte de ${user.prenom} ${user.nom} ?`)) {
+    if (await $confirm(`Débloquer le compte de ${user.prenom} ${user.nom} ?`)) {
         router.post(`/admin/users/${user.id}/debloquer`)
     }
 }

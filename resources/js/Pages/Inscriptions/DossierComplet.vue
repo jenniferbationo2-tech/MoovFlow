@@ -83,7 +83,7 @@ const couleurType = computed(() => ({
                     </Link>
 
                     <span class="inline-block rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold uppercase tracking-wider text-emerald-700">
-                        🎉 Étape 2 / 2
+                         Étape 2 / 2
                     </span>
                     <h1 class="mt-3 font-display text-2xl font-extrabold text-text-main sm:text-3xl">
                         Compléter votre dossier

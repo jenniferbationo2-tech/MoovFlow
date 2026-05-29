@@ -47,6 +47,23 @@ const toggleTech = (form, tech) => {
 const onDocumentJointChange = (form, e) => {
     form.document_joint = e.target.files[0]
 }
+
+// ═══ GESTION DES CONFÉRENCIERS (type CONF) ═══
+const ajouterConferencier = (form) => {
+    if (!Array.isArray(form.conferenciers)) {
+        form.conferenciers = []
+    }
+    form.conferenciers.push({
+        prenom: '',
+        nom: '',
+        fonction: '',
+        bio: '',
+    })
+}
+
+const supprimerConferencier = (form, index) => {
+    form.conferenciers.splice(index, 1)
+}
 </script>
 
 <template>
@@ -167,6 +184,94 @@ const onDocumentJointChange = (form, e) => {
                     <textarea v-model="form.programme_agenda" rows="6"
                               placeholder="Ex:&#10;09:00 - Accueil&#10;09:30 - Ouverture&#10;10:00 - Conférence 1&#10;11:00 - Pause&#10;..."
                               class="w-full rounded-lg border-2 border-border-soft bg-white px-4 py-3 text-sm outline-none focus:border-moov-blue"/>
+                </div>
+                <!-- ═══ CONFÉRENCIERS (dynamique) ═══ -->
+                <div class="rounded-xl border-2 border-rose-100 bg-rose-50/30 p-5">
+                    <div class="mb-4 flex items-center justify-between gap-3">
+                        <div>
+                            <label class="block text-sm font-bold text-text-main">
+                                Conférenciers / Intervenants
+                            </label>
+                            <p class="mt-0.5 text-xs text-text-sub">
+                                Liste des intervenants prévus pour cette conférence
+                            </p>
+                        </div>
+                        <button type="button" @click="ajouterConferencier(form)"
+                            class="inline-flex items-center gap-1.5 rounded-lg bg-moov-blue px-3 py-2 text-xs font-bold text-white transition hover:bg-blue-700">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            Ajouter
+                        </button>
+                    </div>
+
+                    <!-- Liste des conférenciers -->
+                    <div v-if="form.conferenciers && form.conferenciers.length > 0" class="space-y-3">
+                        <div v-for="(conf, index) in form.conferenciers" :key="index"
+                             class="rounded-lg border border-rose-200 bg-white p-4">
+
+                            <!-- Header : numéro + supprimer -->
+                            <div class="mb-3 flex items-center justify-between">
+                                <span class="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-rose-700">
+                                    <span class="flex h-5 w-5 items-center justify-center rounded-full bg-rose-100 text-[10px]">{{ index + 1 }}</span>
+                                    Conférencier
+                                </span>
+                                <button type="button" @click="supprimerConferencier(form, index)"
+                                    class="rounded p-1 text-red-500 transition hover:bg-red-50 hover:text-red-700"
+                                    title="Supprimer">
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 3h6a1 1 0 011 1v3H8V4a1 1 0 011-1z"/>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <!-- Prénom + Nom -->
+                            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <div>
+                                    <label class="mb-1 block text-xs font-bold text-text-sub">Prénom *</label>
+                                    <input type="text" v-model="conf.prenom" required
+                                        placeholder="Jean"
+                                        class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                                </div>
+                                <div>
+                                    <label class="mb-1 block text-xs font-bold text-text-sub">Nom *</label>
+                                    <input type="text" v-model="conf.nom" required
+                                        placeholder="OUEDRAOGO"
+                                        class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                                </div>
+                            </div>
+
+                            <!-- Fonction -->
+                            <div class="mt-3">
+                                <label class="mb-1 block text-xs font-bold text-text-sub">Fonction / Titre</label>
+                                <input type="text" v-model="conf.fonction"
+                                    placeholder="Ex: Directeur Innovation Moov Africa"
+                                    class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                            </div>
+
+                            <!-- Bio -->
+                            <div class="mt-3">
+                                <label class="mb-1 block text-xs font-bold text-text-sub">Bio courte</label>
+                                <textarea v-model="conf.bio" rows="2"
+                                    placeholder="Expert en transformation digitale avec 15 ans d'expérience..."
+                                    class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- État vide -->
+                    <div v-else
+                         class="rounded-lg border-2 border-dashed border-rose-200 bg-white py-8 text-center">
+                        <svg class="mx-auto h-10 w-10 text-rose-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/>
+                        </svg>
+                        <p class="mt-2 text-sm text-text-sub">
+                            Aucun conférencier ajouté
+                        </p>
+                        <p class="mt-1 text-xs text-text-muted">
+                            Cliquez sur "Ajouter" pour commencer
+                        </p>
+                    </div>
                 </div>
 
                 <label class="flex items-start gap-3 rounded-lg border-2 border-border-soft p-4 cursor-pointer hover:bg-page-bg/50">

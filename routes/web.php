@@ -51,7 +51,8 @@ Route::middleware('auth')->group(function () {
      //  Evenements 
      Route::resource('evenements', EvenementController::class)->except(['index', 'show']);
      Route::get('evenements/{evenement}/inscrire', [InscriptionController::class, 'create'])->name('evenements.inscrire');
-     Route::get('evenements/{evenement}/export-paricipants', [InscriptionController::class, 'export'])->name('evenements.export-participants');
+     Route::get('evenements/{evenement}/export-participants-pdf', [\App\Http\Controllers\InscriptionController::class, 'exportParticipantsPdf'])
+          ->name('evenements.export-participants-pdf');
      Route::patch('evenements/{evenement}/statut', [EvenementController::class, 'updateStatut'])->name('evenements.updateStatut');
 
 
@@ -62,6 +63,9 @@ Route::middleware('auth')->group(function () {
           ->name('evenements.valider');
      Route::post('/evenements/{evenement}/rejeter', [\App\Http\Controllers\EvenementController::class, 'rejeter'])
           ->name('evenements.rejeter');
+
+     Route::post('/evenements/{evenement}/demander-modifications', [\App\Http\Controllers\EvenementController::class, 'demanderModifications'])
+          ->name('evenements.demander-modifications');
 
      // Vue staff
      Route::get('/inscriptions', [\App\Http\Controllers\InscriptionController::class, 'index'])

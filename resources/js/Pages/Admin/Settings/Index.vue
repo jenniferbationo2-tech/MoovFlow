@@ -109,7 +109,7 @@ const fuseauxHoraires = [
             </p>
         </div>
 
-        <!-- ─── ONGLETS ─── -->
+        
         <div class="overflow-hidden rounded-xl bg-card shadow-card">
 
             <div class="border-b border-border-soft">
@@ -140,7 +140,7 @@ const fuseauxHoraires = [
 
                         <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
 
-                            <!-- Logo (1 col) -->
+                            
                             <div class="md:col-span-1">
                                 <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">
                                     Logo
@@ -160,7 +160,7 @@ const fuseauxHoraires = [
                                 </label>
                             </div>
 
-                            <!-- Nom + Slogan (2 cols) -->
+            
                             <div class="space-y-4 md:col-span-2">
                                 <div>
                                     <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-sub">
@@ -177,7 +177,7 @@ const fuseauxHoraires = [
                                     </label>
                                     <input v-model="formGeneral.app_slogan" type="text"
                                            placeholder="Portail dCIRP - Moov Africa Burkina"
-                                           class="w-full rounded-lg border-2 border-border-soft bg-white px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                                           class="w-full rounded-lg border-2 border-border-soft bg-moov-orange px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
                                 </div>
                             </div>
                         </div>

@@ -1,7 +1,17 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import DashboardLayout from '@/Layouts/DashboardLayout.vue'
+import { Doughnut } from 'vue-chartjs'
+import {
+    Chart as ChartJS,
+    ArcElement,
+    Tooltip,
+    Legend,
+    Title,
+} from 'chart.js'
+
+ChartJS.register(ArcElement, Tooltip, Legend, Title)
 
 const props = defineProps({
     role:                   String,
@@ -21,12 +31,14 @@ const props = defineProps({
     // Participant
     mesProchainsEvenements: Array,
     recommandes:            Array,
+    // NOUVEAU — Notifications + Camembert
+    notifications:          { type: Array, default: () => [] },
+    repartitionTypes:       { type: Array, default: () => [] },
 })
 
 const page = usePage()
 const userPrenom = computed(() => page.props.auth?.user?.prenom ?? '')
 
-// ── HELPERS ──────────────────────────────────────
 const dateAujourdhui = computed(() => {
     return new Date().toLocaleDateString('fr-FR', {
         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -138,14 +150,91 @@ const maxPerformance = computed(() => {
     if (!props.performanceTypes?.length) return 0
     return Math.max(...props.performanceTypes.map(p => p.total))
 })
+
+
+const couleursTypeHex = {
+    BARA_MOUSSO: '#f59e0b',  // amber
+    CONF:        '#e11d48',  // rose
+    SPORT:       '#3b82f6',  // blue
+    CHALLENGE:   '#8b5cf6',  // violet
+    FORMATION:   '#10b981',  // emerald
+    HACK:        '#f97316',  // orange
+    SALON:       '#6366f1',  // indigo
+}
+
+
+const chartData = computed(() => {
+    const types = props.repartitionTypes ?? []
+    return {
+        labels: types.map(t => t.nom),
+        datasets: [{
+            data: types.map(t => t.total),
+            backgroundColor: types.map(t => couleursTypeHex[t.code] ?? '#94a3b8'),
+            borderColor: '#fff',
+            borderWidth: 3,
+            hoverOffset: 8,
+        }]
+    }
+})
+
+// Données pour le Doughnut Chart RESPONSABLE (performance par type)
+const chartDataPerformance = computed(() => {
+    const types = props.performanceTypes ?? []
+    return {
+        labels: types.map(t => t.type),
+        datasets: [{
+            data: types.map(t => t.total),
+            backgroundColor: types.map(t => couleursTypeHex[t.code] ?? '#94a3b8'),
+            borderColor: '#fff',
+            borderWidth: 3,
+            hoverOffset: 8,
+        }]
+    }
+})
+
+const totalPerformance = computed(() =>
+    (props.performanceTypes ?? []).reduce((acc, t) => acc + t.total, 0)
+)
+
+const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '65%',
+    plugins: {
+        legend: { display: false },
+        tooltip: {
+            backgroundColor: '#0F172A',
+            padding: 12,
+            cornerRadius: 8,
+            titleFont: { size: 13, weight: 'bold' },
+            bodyFont: { size: 12 },
+            callbacks: {
+                label: function(context) {
+                    const total = context.dataset.data.reduce((a, b) => a + b, 0)
+                    const pct = total > 0 ? Math.round((context.parsed / total) * 100) : 0
+                    return ` ${context.parsed} événement(s) · ${pct}%`
+                }
+            }
+        }
+    }
+}
+
+const totalEvenementsTypes = computed(() =>
+    (props.repartitionTypes ?? []).reduce((acc, t) => acc + t.total, 0)
+)
+
+const styleNotification = (type) => ({
+    danger:  { border: 'border-red-500',     bg: 'bg-red-50',     text: 'text-red-700',     icon: 'bg-red-100 text-red-600' },
+    warning: { border: 'border-amber-500',   bg: 'bg-amber-50',   text: 'text-amber-700',   icon: 'bg-amber-100 text-amber-600' },
+    info:    { border: 'border-blue-500',    bg: 'bg-blue-50',    text: 'text-blue-700',    icon: 'bg-blue-100 text-blue-600' },
+    success: { border: 'border-emerald-500', bg: 'bg-emerald-50', text: 'text-emerald-700', icon: 'bg-emerald-100 text-emerald-600' },
+}[type] || { border: 'border-slate-400', bg: 'bg-slate-50', text: 'text-slate-700', icon: 'bg-slate-100 text-slate-600' })
 </script>
 
 <template>
     <DashboardLayout>
 
-        <!-- ════════════════════════════════════ -->
-        <!--   DASHBOARD ADMIN                    -->
-        <!-- ════════════════════════════════════ -->
+        
         <div v-if="role === 'admin'">
 
             <!-- En-tête -->
@@ -267,48 +356,117 @@ const maxPerformance = computed(() => {
                 </div>
             </div>
 
-            <!-- Répartition + Statut -->
+           <!-- ════ NOTIFICATIONS (panneau d'alertes) ════ -->
+            <div v-if="notifications.length > 0" class="mb-8 rounded-xl bg-card shadow-card">
+                <div class="border-b border-border-soft p-5">
+                    <h2 class="flex items-center gap-2 font-display text-base font-bold text-text-main">
+                        <svg class="h-5 w-5 text-moov-orange" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                        </svg>
+                        Notifications
+                    </h2>
+                    <p class="mt-1 text-xs text-text-sub">Actions importantes</p>
+                </div>
+                <div class="divide-y divide-border-soft">
+                    <component v-for="(notif, i) in notifications" :key="i"
+                          :is="notif.href ? 'a' : 'div'"
+                          :href="notif.href"
+                          :class="['flex items-center gap-3 p-4 border-l-4 transition',
+                              styleNotification(notif.type).border,
+                              notif.href ? 'hover:bg-page-bg/50 cursor-pointer' : '']">
+                        <div :class="['flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full',
+                            styleNotification(notif.type).icon]">
+                            <svg v-if="notif.type === 'success'" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            <svg v-else-if="notif.type === 'danger'" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                            <svg v-else-if="notif.type === 'warning'" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <svg v-else class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <p :class="['flex-1 text-sm font-bold', styleNotification(notif.type).text]">
+                            {{ notif.titre }}
+                        </p>
+                        <span v-if="notif.href" :class="['text-sm font-bold', styleNotification(notif.type).text]">→</span>
+                    </component>
+                </div>
+            </div>
+
+            <!-- ════ CAMEMBERT + STATUT ÉVÉNEMENTS ════ -->
             <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+
+                <!-- GAUCHE : Camembert répartition événements par type -->
                 <div class="rounded-xl bg-card p-6 shadow-card">
-                    <h2 class="mb-1 font-display text-base font-bold text-text-main">Répartition des utilisateurs</h2>
-                    <p class="mb-5 text-xs text-text-sub">Total : {{ totalUtilisateurs }} comptes</p>
-                    <div class="space-y-3">
-                        <div v-for="r in repartitionRoles" :key="r.role">
-                            <div class="mb-1 flex items-center justify-between text-sm">
-                                <span class="font-bold text-text-main">{{ labelRole(r.role) }}</span>
-                                <span class="font-display text-lg font-extrabold text-text-main">{{ r.total }}</span>
+                    <h2 class="mb-1 font-display text-base font-bold text-text-main">
+                        Répartition des événements
+                    </h2>
+                    <p class="mb-5 text-xs text-text-sub">
+                        Total : {{ totalEvenementsTypes }} événement{{ totalEvenementsTypes > 1 ? 's' : '' }} par typologie
+                    </p>
+
+                    <div v-if="totalEvenementsTypes > 0" class="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:items-center">
+                        <!-- Camembert -->
+                        <div class="relative h-56">
+                            <Doughnut :data="chartData" :options="chartOptions" />
+                            <!-- Total au centre -->
+                            <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                                <p class="font-display text-3xl font-extrabold text-text-main">
+                                    {{ totalEvenementsTypes }}
+                                </p>
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                                    Au total
+                                </p>
                             </div>
-                            <div class="h-2 overflow-hidden rounded-full bg-page-bg">
-                                <div :class="['h-full rounded-full transition-all', couleurRole(r.role)]"
-                                     :style="{ width: totalUtilisateurs > 0 ? (r.total / totalUtilisateurs * 100) + '%' : '0%' }"/>
+                        </div>
+
+                        <!-- Légende compacte -->
+                        <div class="space-y-2">
+                            <div v-for="t in repartitionTypes" :key="t.code"
+                                 class="flex items-center gap-2 text-sm">
+                                <span class="h-3 w-3 flex-shrink-0 rounded-full"
+                                      :style="{ backgroundColor: couleursTypeHex[t.code] || '#94a3b8' }"/>
+                                <span class="flex-1 truncate text-text-sub">{{ t.nom }}</span>
+                                <span :class="['font-bold', t.total > 0 ? 'text-text-main' : 'text-text-muted']">
+                                    {{ t.total }}
+                                </span>
                             </div>
                         </div>
                     </div>
+
+                    <div v-else class="py-10 text-center text-sm text-text-sub">
+                        Aucun événement à analyser
+                    </div>
                 </div>
 
+            
                 <div class="rounded-xl bg-card p-6 shadow-card">
                     <h2 class="mb-1 font-display text-base font-bold text-text-main">Statut des événements</h2>
                     <p class="mb-5 text-xs text-text-sub">Total : {{ totalEvenements }} événements</p>
                     <div class="space-y-3 text-sm">
-                        <div class="flex items-center justify-between">
-                            <span class="text-text-sub">Brouillon</span>
-                            <span class="font-bold text-amber-600">{{ completionEvenements?.brouillon ?? 0 }}</span>
+                        <div class="flex items-center justify-between rounded-lg bg-amber-50/50 px-3 py-2">
+                            <span class="font-bold text-amber-700">Brouillon</span>
+                            <span class="font-display text-xl font-extrabold text-amber-600">{{ completionEvenements?.brouillon ?? 0 }}</span>
                         </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-text-sub">Publié</span>
-                            <span class="font-bold text-emerald-600">{{ completionEvenements?.publie ?? 0 }}</span>
+                        <div class="flex items-center justify-between rounded-lg bg-emerald-50/50 px-3 py-2">
+                            <span class="font-bold text-emerald-700">Publié</span>
+                            <span class="font-display text-xl font-extrabold text-emerald-600">{{ completionEvenements?.publie ?? 0 }}</span>
                         </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-text-sub">En cours</span>
-                            <span class="font-bold text-blue-600">{{ completionEvenements?.en_cours ?? 0 }}</span>
+                        <div class="flex items-center justify-between rounded-lg bg-blue-50/50 px-3 py-2">
+                            <span class="font-bold text-blue-700">En cours</span>
+                            <span class="font-display text-xl font-extrabold text-blue-600">{{ completionEvenements?.en_cours ?? 0 }}</span>
                         </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-text-sub">Terminé</span>
-                            <span class="font-bold text-slate-600">{{ completionEvenements?.termine ?? 0 }}</span>
+                        <div class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                            <span class="font-bold text-slate-700">Terminé</span>
+                            <span class="font-display text-xl font-extrabold text-slate-600">{{ completionEvenements?.termine ?? 0 }}</span>
                         </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-text-sub">Annulé</span>
-                            <span class="font-bold text-red-600">{{ completionEvenements?.annule ?? 0 }}</span>
+                        <div class="flex items-center justify-between rounded-lg bg-red-50/50 px-3 py-2">
+                            <span class="font-bold text-red-700">Annulé</span>
+                            <span class="font-display text-xl font-extrabold text-red-600">{{ completionEvenements?.annule ?? 0 }}</span>
                         </div>
                     </div>
                 </div>
@@ -760,9 +918,7 @@ const maxPerformance = computed(() => {
                 </div>
             </div>
         </div>
-        <!-- ════════════════════════════════════ -->
-        <!--   DASHBOARD RESPONSABLE dCIRP         -->
-        <!-- ════════════════════════════════════ -->
+
         <div v-else-if="role === 'responsable_dcirp'">
 
             <!-- En-tête -->
@@ -894,41 +1050,46 @@ const maxPerformance = computed(() => {
                 </div>
             </div>
 
-            <!-- Performance par type d'événement -->
+            <!-- ════ CAMEMBERT - Performance par type d'événement ════ -->
             <div class="mb-8 rounded-xl bg-card p-6 shadow-card">
-                <div class="mb-5 flex items-center justify-between">
-                    <div>
-                        <h2 class="font-display text-base font-bold text-text-main">
-                            Performance par type d'événement
-                        </h2>
-                        <p class="mt-1 text-xs text-text-sub">
-                            Volumétrie par catégorie
-                        </p>
-                    </div>
+                <div class="mb-5">
+                    <h2 class="font-display text-base font-bold text-text-main">
+                        Répartition par type d'événement
+                    </h2>
+                    <p class="mt-1 text-xs text-text-sub">
+                        Volumétrie par catégorie d'événement
+                    </p>
                 </div>
 
-                <div v-if="performanceTypes?.length" class="space-y-3">
-                    <div v-for="(p, i) in performanceTypes" :key="i">
-                        <div class="mb-1 flex items-center justify-between text-sm">
-                            <span :class="['rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
-                                couleurType(p.code)]">
-                                {{ p.type }}
+                <div v-if="totalPerformance > 0" class="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:items-center">
+                    <!-- Camembert -->
+                    <div class="relative h-64">
+                        <Doughnut :data="chartDataPerformance" :options="chartOptions" />
+                        <!-- Total au centre -->
+                        <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                            <p class="font-display text-3xl font-extrabold text-text-main">
+                                {{ totalPerformance }}
+                            </p>
+                            <p class="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                                Au total
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Légende détaillée -->
+                    <div class="space-y-2.5">
+                        <div v-for="p in performanceTypes" :key="p.code"
+                             class="flex items-center gap-3">
+                            <span class="h-3 w-3 flex-shrink-0 rounded-full"
+                                  :style="{ backgroundColor: couleursTypeHex[p.code] || '#94a3b8' }"/>
+                            <span class="flex-1 truncate text-sm text-text-sub">{{ p.type }}</span>
+                            <span class="text-xs text-text-muted">
+                                {{ totalPerformance > 0 ? Math.round((p.total / totalPerformance) * 100) : 0 }}%
                             </span>
-                            <span class="font-display text-lg font-extrabold text-text-main">
+                            <span :class="['font-display text-lg font-extrabold w-8 text-right',
+                                p.total > 0 ? 'text-text-main' : 'text-text-muted']">
                                 {{ p.total }}
                             </span>
-                        </div>
-                        <div class="h-2 overflow-hidden rounded-full bg-page-bg">
-                            <div :class="['h-full rounded-full transition-all',
-                                p.code === 'BARA_MOUSSO' ? 'bg-amber-500'
-                                : p.code === 'CONF' ? 'bg-rose-500'
-                                : p.code === 'SPORT' ? 'bg-blue-500'
-                                : p.code === 'CHALLENGE' ? 'bg-violet-500'
-                                : p.code === 'FORMATION' ? 'bg-emerald-500'
-                                : p.code === 'HACK' ? 'bg-orange-500'
-                                : p.code === 'SALON' ? 'bg-indigo-500'
-                                : 'bg-slate-400']"
-                                 :style="{ width: maxPerformance > 0 ? (p.total / maxPerformance * 100) + '%' : '0%' }"/>
                         </div>
                     </div>
                 </div>
@@ -996,9 +1157,7 @@ const maxPerformance = computed(() => {
             </div>
         </div>
 
-        <!-- ════════════════════════════════════ -->
-        <!--   AUTRES RÔLES (placeholders)        -->
-        <!-- ════════════════════════════════════ -->
+        
         <div v-else class="rounded-xl bg-card p-12 text-center shadow-card">
             <p class="font-display text-lg font-extrabold text-text-main">
                 Tableau de bord {{ role }}

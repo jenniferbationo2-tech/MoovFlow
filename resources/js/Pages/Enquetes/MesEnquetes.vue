@@ -14,7 +14,7 @@ const formatDate = (d) => d
 <template>
     <DashboardLayout>
 
-        <!-- ─── EN-TÊTE ─── -->
+        
         <div class="mb-6">
             <p class="text-xs font-bold uppercase tracking-wider text-text-muted">
                 Mon espace
