@@ -8,10 +8,11 @@ import EtapeSpecifique from './Wizard/EtapeSpecifique.vue'
 import EtapeRecapitulatif from './Wizard/EtapeRecapitulatif.vue'
 
 const props = defineProps({
-    typeSelectionne: { type: Object, required: true },
-    lieux:           { type: Array,  required: true },
-    evenement:       { type: Object, default: null }, // pour édition
+    typeSelectionne: { type: Object,  required: true },
+    lieux:           { type: Array,   required: true },
+    evenement:       { type: Object,  default: null },
     isEdit:          { type: Boolean, default: false },
+    userRole:        { type: Object,  default: () => ({}) },
 })
 
 // État wizard
@@ -245,11 +246,12 @@ const updateField = (key, value) => {
                          @suivant="etapeSuivante"/>
 
         <EtapeRecapitulatif v-show="etapeActuelle === 5"
-                            :form="form"
-                            :type="typeSelectionne"
-                            :lieux="lieux"
-                            :is-edit="isEdit"
-                            @precedent="etapePrecedente"
-                            @valider="enregistrer"/>
+                    :form="form"
+                    :type="typeSelectionne"
+                    :lieux="lieux"
+                    :is-edit="isEdit"
+                    :user-role="userRole"
+                    @precedent="etapePrecedente"
+                    @valider="enregistrer"/>
     </div>
 </template>

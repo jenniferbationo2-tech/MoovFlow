@@ -24,20 +24,20 @@ class VivierController extends Controller
 
     public function benevoles(Request $request): Response
     {
-        $this-> staffAccess();
+        $this->staffAccess();
 
         $query = Benevole::query();
         if ($request->filled('search')) {
             $q = $request->search;
             $query->where(function ($s) use ($q) {
                 $s->where('nom', 'like', "%$q%")
-                  ->orWhere('prenom', 'like', "%$q%")
-                  ->orWhere('email', 'like', "%$q%")
-                  ->orWhere('telephone', 'like', "%$q%");
+                    ->orWhere('prenom', 'like', "%$q%")
+                    ->orWhere('email', 'like', "%$q%")
+                    ->orWhere('telephone', 'like', "%$q%");
             });
         }
 
-        $benevoles = $query->latest()->paginate(20)->through(fn (Benevole $b) => [
+        $benevoles = $query->latest()->paginate(20)->through(fn(Benevole $b) => [
             'id'             => $b->id,
             'nom'            => $b->nom,
             'prenom'         => $b->prenom,
@@ -67,7 +67,7 @@ class VivierController extends Controller
 
     public function storeBenevole(Request $request): RedirectResponse
     {
-        $this-> staffAccess();
+        $this->staffAccess();
 
         $validated = $request->validate([
             'nom'            => ['required', 'string', 'max:255'],
@@ -89,29 +89,29 @@ class VivierController extends Controller
 
     public function destroyBenevole(Benevole $benevole): RedirectResponse
     {
-        $this-> staffAccess();
+        $this->staffAccess();
         $benevole->delete();
         return back()->with('success', 'Bénévole supprimé.');
     }
 
-    // ════════════ INTERVENANTS ════════════
+
 
     public function intervenants(Request $request): Response
     {
-        $this-> staffAccess();
+        $this->staffAccess();
 
         $query = Intervenant::query();
         if ($request->filled('search')) {
             $q = $request->search;
             $query->where(function ($s) use ($q) {
                 $s->where('nom', 'like', "%$q%")
-                  ->orWhere('prenom', 'like', "%$q%")
-                  ->orWhere('email', 'like', "%$q%")
-                  ->orWhere('specialite', 'like', "%$q%");
+                    ->orWhere('prenom', 'like', "%$q%")
+                    ->orWhere('email', 'like', "%$q%")
+                    ->orWhere('specialite', 'like', "%$q%");
             });
         }
 
-        $intervenants = $query->latest()->paginate(20)->through(fn (Intervenant $i) => [
+        $intervenants = $query->latest()->paginate(20)->through(fn(Intervenant $i) => [
             'id'         => $i->id,
             'nom'        => $i->nom,
             'prenom'     => $i->prenom,
@@ -120,15 +120,15 @@ class VivierController extends Controller
             'specialite' => $i->specialite ?? null,
             'biographie' => $i->biographie ?? null,
             'tarif_jour' => $i->tarif_jour ?? 0,
-            'role'       => $i->role ?? 'intervenant',
+            'role' => $i->specialite ?? 'intervenant',
             'created_at' => optional($i->created_at)?->toIso8601String(),
         ]);
 
         $stats = [
             'total'         => Intervenant::count(),
-            'intervenants'  => Intervenant::where('role', 'intervenant')->count(),
-            'jury'          => Intervenant::where('role', 'jury')->count(),
-            'formateurs'    => Intervenant::where('role', 'formateur')->count(),
+            'intervenants' => Intervenant::count(),
+            'jury'         => 0,
+            'formateurs'   => 0,
         ];
 
         return Inertia::render('Vivier/Intervenants', [
@@ -140,7 +140,7 @@ class VivierController extends Controller
 
     public function storeIntervenant(Request $request): RedirectResponse
     {
-        $this-> staffAccess();
+        $this->staffAccess();
 
         $validated = $request->validate([
             'nom'        => ['required', 'string', 'max:255'],
@@ -162,7 +162,7 @@ class VivierController extends Controller
 
     public function destroyIntervenant(Intervenant $intervenant): RedirectResponse
     {
-        $this-> staffAccess();
+        $this->staffAccess();
         $intervenant->delete();
         return back()->with('success', 'Intervenant supprimé.');
     }

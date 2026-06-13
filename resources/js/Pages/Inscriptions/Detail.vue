@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import DashboardLayout from '@/Layouts/DashboardLayout.vue'
+import { $confirm } from '@/plugins/confirm'
 
 const props = defineProps({
     inscription: { type: Object, required: true },
@@ -47,8 +48,14 @@ const peutPreselectionner = computed(() =>
     props.inscription.statut === 'preinscrit' && necessitePreselection.value
 )
 
-const presele = () => {
-    if (confirm('Présélectionner ce candidat et lui envoyer le lien du dossier complet ?')) {
+const presele = async () => {
+    const ok = await $confirm({
+        type: 'success',
+        title: 'Présélectionner ce candidat ?',
+        message: 'Un email avec le lien du dossier complet sera envoyé au participant.',
+        confirmText: 'Oui, présélectionner',
+    })
+    if (ok) {
         router.post(`/inscriptions/${props.inscription.id}/preselectionner`, {}, {
             preserveScroll: true,
         })
@@ -78,8 +85,14 @@ const peutValider = computed(() => {
     return props.inscription.statut === 'recommandee'
 })
 
-const valider = () => {
-    if (confirm('Valider définitivement cette inscription ? Un email avec le QR code sera envoyé.')) {
+const valider = async () => {
+    const ok = await $confirm({
+        type: 'success',
+        title: 'Valider définitivement cette inscription ?',
+        message: 'Un email avec le QR code sera envoyé au participant.',
+        confirmText: 'Oui, valider',
+    })
+    if (ok) {
         router.post(`/inscriptions/${props.inscription.id}/valider`, {}, {
             preserveScroll: true,
         })

@@ -48,14 +48,20 @@ class RapportController extends Controller
         }
 
         if ($periode === '12mois') {
-            $eventsQuery->where('date_debut', '>=', now()->subYear());
-            $inscQuery->whereHas('evenement', fn ($q) => $q->where('date_debut', '>=', now()->subYear()));
+            $dateMin = now()->subYear();
+            $eventsQuery->where('date_debut', '>=', $dateMin);
+            $inscQuery->whereHas('evenement', fn($q) => $q->where('date_debut', '>=', $dateMin));
+            $rseQuery->whereHas('evenement', fn($q) => $q->where('date_debut', '>=', $dateMin));
         } elseif ($periode === '6mois') {
-            $eventsQuery->where('date_debut', '>=', now()->subMonths(6));
-            $inscQuery->whereHas('evenement', fn ($q) => $q->where('date_debut', '>=', now()->subMonths(6)));
+            $dateMin = now()->subMonths(6);
+            $eventsQuery->where('date_debut', '>=', $dateMin);
+            $inscQuery->whereHas('evenement', fn($q) => $q->where('date_debut', '>=', $dateMin));
+            $rseQuery->whereHas('evenement', fn($q) => $q->where('date_debut', '>=', $dateMin));
         } elseif ($periode === '3mois') {
-            $eventsQuery->where('date_debut', '>=', now()->subMonths(3));
-            $inscQuery->whereHas('evenement', fn ($q) => $q->where('date_debut', '>=', now()->subMonths(3)));
+            $dateMin = now()->subMonths(3);
+            $eventsQuery->where('date_debut', '>=', $dateMin);
+            $inscQuery->whereHas('evenement', fn($q) => $q->where('date_debut', '>=', $dateMin));
+            $rseQuery->whereHas('evenement', fn($q) => $q->where('date_debut', '>=', $dateMin));
         }
 
         // KPIs RSE globaux
@@ -88,11 +94,11 @@ class RapportController extends Controller
             ->groupBy('types_evenement.id', 'types_evenement.nom', 'types_evenement.code')
             ->orderByDesc('nb_inscriptions')
             ->get()
-            ->map(fn ($r) => [
+            ->map(fn($r) => [
                 'type'           => $r->type_nom,
                 'code'           => $r->type_code,
                 'nb_evenements'  => (int) $r->nb_evenements,
-                'nb_inscriptions'=> (int) $r->nb_inscriptions,
+                'nb_inscriptions' => (int) $r->nb_inscriptions,
             ])
             ->all();
 
@@ -110,7 +116,7 @@ class RapportController extends Controller
                     'date_debut'        => optional($e->date_debut)?->toIso8601String(),
                     'type'              => $e->typeEvenement?->nom,
                     'type_code'         => $e->typeEvenement?->code,
-                    'inscriptions_count'=> $e->inscriptions_count,
+                    'inscriptions_count' => $e->inscriptions_count,
                     'beneficiaires'     => (int) ($rse?->nb_beneficiaires_directs ?? 0),
                 ];
             })
@@ -174,7 +180,7 @@ class RapportController extends Controller
             $date = \Carbon\Carbon::createFromFormat('Y-m', $mois);
             return [
                 'mois'    => $date->locale('fr')->isoFormat('MMM'),
-                'mois_full'=> $date->format('Y-m'),
+                'mois_full' => $date->format('Y-m'),
                 'total'   => (int) ($data[$mois] ?? 0),
             ];
         })->all();

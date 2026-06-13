@@ -108,6 +108,7 @@ class EvenementController extends Controller
      */
     public function create(Request $request): Response
     {
+        $user = Auth::user();
         $this->authorizeCreation();
 
         $types = TypeEvenement::orderBy('nom')->get();
@@ -120,9 +121,13 @@ class EvenementController extends Controller
         }
 
         return Inertia::render('Evenements/Create', [
-            'types'               => $types,
-            'lieux'               => $lieux,
-            'typePreselectionne'  => $typePreselectionne,
+            'types'              => $types,
+            'lieux'              => $lieux,
+            'typePreselectionne' => $typePreselectionne,
+            'userRole'           => [
+                'estResponsable' => $user->hasAnyRole(['admin', 'responsable_dcirp']),
+                'estOrganisateur' => $user->hasRole('organisateur'),
+            ]
         ]);
     }
 
@@ -137,7 +142,7 @@ class EvenementController extends Controller
         $type = TypeEvenement::findOrFail($request->type_evenement_id);
         $typeCode = $type->code;
 
-        // ── VALIDATION COMMUNE ──
+        //  VALIDATION COMMUNE 
         $rules = [
             'titre'                => ['required', 'string', 'max:300'],
             'description'          => ['nullable', 'string'],
@@ -400,8 +405,9 @@ class EvenementController extends Controller
             'modifications_demandees_par'  => $user->id,
         ]);
 
-      
-        return back()->with('success', 
+
+        return back()->with(
+            'success',
             'Demande de modifications envoyée à l\'organisateur. L\'événement repasse en brouillon.'
         );
     }

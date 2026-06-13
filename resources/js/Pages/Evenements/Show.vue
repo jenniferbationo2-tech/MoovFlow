@@ -383,7 +383,7 @@ const lienInscription = computed(() => {
             <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
 
                 <Link href="/evenements" class="text-sm font-semibold text-text-sub hover:text-moov-blue">
-                    ← Retour aux événements
+                     Retour aux événements
                 </Link>
 
                 <div class="flex flex-wrap gap-2">
@@ -444,6 +444,15 @@ const lienInscription = computed(() => {
                             </svg>
                             Valider et publier
                         </button>
+                          <!-- TÉLÉCHARGER LISTE PARTICIPANTS -->
+                        <a v-if="estStaff" :href="`/evenements/${evenement.id}/export-participants-pdf`"
+                            target="_blank"
+                            class="inline-flex items-center gap-1.5 rounded-lg border-2 border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            Liste PDF
+                        </a>
                         <!-- DEMANDER MODIFICATIONS : responsable (alternative au rejet) -->
                         <button v-if="peutDemanderModifs" @click="ouvrirModalModifs"
                             class="inline-flex items-center gap-1.5 rounded-lg border-2 border-amber-300 bg-white px-4 py-2.5 text-sm font-bold text-amber-700 transition hover:bg-amber-50">
@@ -535,15 +544,7 @@ const lienInscription = computed(() => {
                             Mode supervision
                         </span>
 
-                        <!-- TÉLÉCHARGER LISTE PARTICIPANTS -->
-                        <a v-if="estStaff" :href="`/evenements/${evenement.id}/export-participants-pdf`"
-                            target="_blank"
-                            class="inline-flex items-center gap-1.5 rounded-lg border-2 border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                            </svg>
-                            Liste PDF
-                        </a>
+                      
                     </template>
                 </div>
             </div>
@@ -732,7 +733,7 @@ const lienInscription = computed(() => {
                                     </span>
                                     <button @click="ouvrirBenevolat(poste)"
                                         class="rounded-lg bg-moov-orange px-3 py-1.5 text-xs font-bold text-white transition hover:bg-orange-600">
-                                        Postuler →
+                                        Postuler 
                                     </button>
                                 </div>
                             </div>

@@ -117,7 +117,7 @@ const toggleActif = (user) => {
     }
 }
 
-const debloquer = (user) => {
+const debloquer = async (user) => {
     if (await $confirm(`Débloquer le compte de ${user.prenom} ${user.nom} ?`)) {
         router.post(`/admin/users/${user.id}/debloquer`)
     }
@@ -336,9 +336,7 @@ const debloquer = (user) => {
             </template>
         </div>
 
-        <!-- ════════════════════════════════════════ -->
-        <!--   MODALE CRÉATION UTILISATEUR             -->
-        <!-- ════════════════════════════════════════ -->
+      
         <div v-if="modalCreationOuvert"
              class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
              @click.self="modalCreationOuvert = false">
@@ -359,7 +357,7 @@ const debloquer = (user) => {
                                 Nom *
                             </label>
                             <input v-model="formCreation.nom" type="text" required
-                                   placeholder="OUEDRAOGO"
+                                   placeholder="BATIONO"
                                    class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
                             <p v-if="formCreation.errors.nom" class="mt-1 text-xs text-red-600">{{ formCreation.errors.nom }}</p>
                         </div>
@@ -368,7 +366,7 @@ const debloquer = (user) => {
                                 Prénom *
                             </label>
                             <input v-model="formCreation.prenom" type="text" required
-                                   placeholder="Aminata"
+                                   placeholder="Carine"
                                    class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
                             <p v-if="formCreation.errors.prenom" class="mt-1 text-xs text-red-600">{{ formCreation.errors.prenom }}</p>
                         </div>
@@ -380,7 +378,7 @@ const debloquer = (user) => {
                                 Email *
                             </label>
                             <input v-model="formCreation.email" type="email" required
-                                   placeholder="aminata@moov.bf"
+                                   placeholder="carine@moov.bf"
                                    class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
                             <p v-if="formCreation.errors.email" class="mt-1 text-xs text-red-600">{{ formCreation.errors.email }}</p>
                         </div>
@@ -438,9 +436,6 @@ const debloquer = (user) => {
             </div>
         </div>
 
-        <!-- ════════════════════════════════════════ -->
-        <!--   MODALE RESET MOT DE PASSE               -->
-        <!-- ════════════════════════════════════════ -->
         <div v-if="userResetMdp"
              class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
              @click.self="userResetMdp = null">

@@ -22,7 +22,7 @@ const formatDateLong = (d) => d
 const initiales = (user) =>
     `${user?.prenom?.[0] ?? ''}${user?.nom?.[0] ?? ''}`.toUpperCase() || 'U'
 
-const genererTous = () => {
+const genererTous = async () => {
     if (await !$confirm(`Générer ${props.kpis.certificats_a_generer ?? 0} certificat(s) pour les participants présents ?`)) return
     router.post(`/evenements/${props.evenement.id}/certificats/generer`, {}, {
         preserveScroll: true,

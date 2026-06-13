@@ -5,9 +5,10 @@ import DashboardLayout from '@/Layouts/DashboardLayout.vue'
 import ModalSelectionType from './Partials/ModalSelectionType.vue'
 import EvenementWizard from './Partials/EvenementWizard.vue'
 const props = defineProps({
-    types:              { type: Array, required: true },
-    lieux:              { type: Array, required: true },
+    types:              { type: Array,  required: true },
+    lieux:              { type: Array,  required: true },
     typePreselectionne: { type: Object, default: null },
+    userRole:           { type: Object, default: () => ({}) },
 })
 
 const typeSelectionne = ref(props.typePreselectionne)
@@ -61,9 +62,10 @@ const changerType = () => {
                 </a>
             </div>
 
-            <EvenementWizard :type-selectionne="typeSelectionne"
-                             :lieux="lieux"
-                             :is-edit="false"/>
+           <EvenementWizard :type-selectionne="typeSelectionne"
+                 :lieux="lieux"
+                 :is-edit="false"
+                 :user-role="userRole"/>
         </div>
 
     </DashboardLayout>

@@ -26,7 +26,7 @@ const userRoles = computed(() => {
     if (rolesData.length > 0 && typeof rolesData[0] === 'object') {
         return rolesData.map(r => r.name)
     }
-    // Si c'est déjà un tableau de strings ['admin', ...]
+
     return rolesData
 })
 
@@ -75,6 +75,70 @@ const peutPublierEvent = (ev) => {
     return ev.created_by !== userId && ['brouillon', 'en_validation'].includes(ev.statut)
 }
 
+// HERO SLIDESHOW 
+const heroImages = [
+    {
+        url: '/images/marley.png',
+        caption: 'Des conférences qui inspirent et connectent les acteurs du numérique',
+    },
+    {
+        url: '/images/Moov-1024x538.jpg',
+        caption: 'Des compétitions sportives qui renforcent la cohésion des équipes Moov',
+    },
+    {
+        url: '/images/prix.png',
+        caption: 'Des hackathons pour innover et transformer les idées en solutions',
+    },
+    {
+        url: '/images/Tery.jpg',
+        caption: 'Des formations numériques pour développer les talents de demain',
+    },
+    {
+        url: '/images/moov-africa_banner01-scaled.jpg',
+        caption: 'Des salons professionnels pour créer des opportunités B2B au Burkina',
+    },
+     {
+        url: '/images/moov-africa_banner02.jpg',
+        caption: 'Des salons professionnels pour créer des opportunités B2B au Burkina',
+    },
+
+     {
+        url: '/images/snc.png',
+        caption: 'Des salons professionnels pour créer des opportunités B2B au Burkina',
+    },
+]
+
+const heroIndex = ref(0)
+const heroPause = ref(false)
+
+const allerHeroImage = (i) => {
+    heroIndex.value = i
+}
+
+const heroPrecedent = () => {
+    heroIndex.value = (heroIndex.value - 1 + heroImages.length) % heroImages.length
+}
+
+const heroSuivant = () => {
+    heroIndex.value = (heroIndex.value + 1) % heroImages.length
+}
+
+// Défilement automatique toutes les 5 secondes
+let heroInterval = null
+
+const demarrerHero = () => {
+    heroInterval = setInterval(() => {
+        if (!heroPause.value) {
+            heroIndex.value = (heroIndex.value + 1) % heroImages.length
+        }
+    }, 5000)
+}
+
+import { onMounted, onUnmounted } from 'vue'
+
+onMounted(() => demarrerHero())
+onUnmounted(() => clearInterval(heroInterval))
+
 const Layout = computed(() => (estStaff.value ? DashboardLayout : PublicLayout))
 
 const peutSInscrire = computed(() =>
@@ -88,8 +152,8 @@ const recherche = ref(props.filters?.search ?? '')
 const evenementsAffiches = computed(() => {
     if (!props.evenements?.data) return []
     let liste = [...props.evenements.data]
-    if (filtreTypeId.value) {
-        liste = liste.filter(e => e.type_evenement?.id == filtreTypeId.value)
+    if (filtreTypeId.value && filtreTypeId.value !== '') {
+        liste = liste.filter(e => e.type_evenement?.code === filtreTypeId.value)
     }
     if (filtreStatut.value) {
         liste = liste.filter(e => e.statut === filtreStatut.value)
@@ -319,7 +383,7 @@ const publierEvenement = (id) => {
                             <select v-model="filtreTypeId" @change="filtrer"
                                 class="rounded-lg border border-border-soft px-3 py-1.5 text-xs font-semibold text-text-main outline-none focus:border-moov-blue">
                                 <option value="">Tous les types</option>
-                                <option v-for="t in typesEvenement" :key="t.id" :value="t.id">
+                                <option v-for="t in typesDisponibles" :key="t.code" :value="t.code">
                                     {{ t.nom }}
                                 </option>
                             </select>
@@ -465,7 +529,7 @@ const publierEvenement = (id) => {
                     </p>
                     <Link v-if="!estAdminPur" href="/evenements/create"
                         class="mt-4 inline-block rounded-lg bg-moov-noir px-5 py-2.5 text-sm font-bold text-white">
-                        Nouvel Événement +
+                        Nouvel Événement 
                     </Link>
                 </div>
             </div>
@@ -484,57 +548,103 @@ const publierEvenement = (id) => {
 
        <template v-else>
 
-            <!-- ════════ HERO AÉRÉ (fond clair) ════════ -->
-            <section class="bg-gradient-to-b from-slate-50 to-white px-4 py-16 sm:py-20">
-                <div class="mx-auto max-w-3xl text-center">
-                    <p class="text-xs font-bold uppercase tracking-[0.3em] text-moov-orange">
-                        Moov Africa Burkina · dCIRP
-                    </p>
-                    <h1 class="mt-4 font-display text-4xl font-extrabold leading-tight text-slate-900 sm:text-5xl">
-                        Les événements qui font<br>
-                        <span class="text-moov-orange">bouger le Burkina</span>
-                    </h1>
-                    <p class="mx-auto mt-5 max-w-xl text-base text-slate-600">
-                        Conférences, tournois, formations, hackathons. Tous les événements RSE
-                        de Moov Africa, réunis sur une seule plateforme.
-                    </p>
+        
+<section class="relative h-[580px] overflow-hidden"
+         @mouseenter="heroPause = true"
+         @mouseleave="heroPause = false">
 
-                    <!-- KPIs en cards (fond blanc, design sobre) -->
-                    <div class="mx-auto mt-10 grid max-w-2xl grid-cols-3 gap-3">
-                        <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
-                            <p class="font-display text-3xl font-extrabold text-moov-blue sm:text-4xl">
-                                {{ kpis.total ?? 0 }}
-                            </p>
-                            <p class="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 sm:text-xs">
-                                Événement{{ (kpis.total ?? 0) > 1 ? 's' : '' }}
-                            </p>
-                        </div>
-                        <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
-                            <p class="font-display text-3xl font-extrabold text-blue-600 sm:text-4xl">
-                                {{ kpis.en_cours ?? 0 }}
-                            </p>
-                            <p class="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 sm:text-xs">
-                                En cours
-                            </p>
-                        </div>
-                        <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
-                            <p class="font-display text-3xl font-extrabold text-moov-orange sm:text-4xl">
-                                <template v-if="typeof kpis.typologies === 'object'">
-                                    {{ kpis.typologies.actives ?? 0 }}<span class="text-base text-slate-400">/{{ kpis.typologies.disponibles ?? 7 }}</span>
-                                </template>
-                                <template v-else>
-                                    {{ kpis.typologies ?? 0 }}
-                                </template>
-                            </p>
-                            <p class="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 sm:text-xs">
-                                Typologies
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </section>
+    <!-- Images en fond -->
+    <div v-for="(img, i) in heroImages" :key="i"
+         :class="['absolute inset-0 transition-opacity duration-1000',
+                  i === heroIndex ? 'opacity-100 z-10' : 'opacity-0 z-0']">
 
-            <!-- ════════ FILTRES PAR TYPE (chips sobres) ════════ -->
+        <!-- Image avec Ken Burns -->
+        <div :class="['absolute inset-0 bg-cover bg-center',
+                      i === heroIndex ? 'animate-ken-burns' : '']"
+             :style="`background-image: url('${img.url}')`"/>
+
+        <!-- Overlay dégradé sombre -->
+        <div class="absolute inset-0 bg-gradient-to-b from-slate-900/30 via-slate-900/50 to-slate-900/80"/>
+    </div>
+
+    <!-- Contenu centré -->
+    <div class="relative z-20 flex h-full flex-col items-center justify-center px-4 text-center">
+
+        <!-- Badge -->
+        <div class="mb-6 animate-fade-up">
+            <span class="inline-flex items-center gap-2 rounded-full border border-moov-orange/40 bg-moov-orange/20 px-5 py-2 text-xs font-bold uppercase tracking-[0.25em] text-moov-orange backdrop-blur-sm">
+                <span class="h-1.5 w-1.5 rounded-full bg-moov-orange animate-pulse"/>
+                Moov Africa Burkina · dCIRP
+            </span>
+        </div>
+
+        <!-- Titre -->
+        <h1 class="max-w-4xl font-display text-4xl font-extrabold leading-tight text-white sm:text-5xl lg:text-6xl animate-fade-up">
+            Les événements qui font<br>
+            <span class="text-moov-orange">bouger le Burkina</span>
+        </h1>
+
+        <!-- Caption dynamique (change avec chaque image) -->
+        <p :key="heroIndex"
+           class="mx-auto mt-6 max-w-xl text-base leading-relaxed text-white/80 animate-fade-up">
+            {{ heroImages[heroIndex].caption }}
+        </p>
+
+        <!-- KPIs -->
+        <div class="mt-10 flex gap-6 animate-fade-up">
+            <div class="text-center">
+                <p class="font-display text-3xl font-extrabold text-white">{{ kpis.total ?? 0 }}</p>
+                <p class="mt-1 text-xs font-bold uppercase tracking-wider text-white/60">
+                    Événement{{ (kpis.total ?? 0) > 1 ? 's' : '' }}
+                </p>
+            </div>
+            <div class="h-12 w-px bg-white/20 self-center"/>
+            <div class="text-center">
+                <p class="font-display text-3xl font-extrabold text-white">{{ kpis.en_cours ?? 0 }}</p>
+                <p class="mt-1 text-xs font-bold uppercase tracking-wider text-white/60">En cours</p>
+            </div>
+            <div class="h-12 w-px bg-white/20 self-center"/>
+            <div class="text-center">
+                <p class="font-display text-3xl font-extrabold text-moov-orange">7</p>
+                <p class="mt-1 text-xs font-bold uppercase tracking-wider text-white/60">Typologies</p>
+            </div>
+        </div>
+
+        <!-- Points de navigation -->
+        <div class="mt-10 flex items-center gap-2">
+            <button v-for="(_, i) in heroImages" :key="i"
+                    @click="allerHeroImage(i)"
+                    :class="['rounded-full transition-all duration-300',
+                             i === heroIndex
+                                 ? 'h-2 w-8 bg-moov-orange'
+                                 : 'h-2 w-2 bg-white/40 hover:bg-white/60']"/>
+        </div>
+    </div>
+
+    <!-- Flèche gauche -->
+    <button @click="heroPrecedent"
+            class="absolute left-4 top-1/2 z-20 -translate-y-1/2 rounded-full bg-black/20 p-3 text-white backdrop-blur-sm transition hover:bg-black/40">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+        </svg>
+    </button>
+
+    <!-- Flèche droite -->
+    <button @click="heroSuivant"
+            class="absolute right-4 top-1/2 z-20 -translate-y-1/2 rounded-full bg-black/20 p-3 text-white backdrop-blur-sm transition hover:bg-black/40">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+        </svg>
+    </button>
+
+    <!-- Barre de progression en bas -->
+    <div class="absolute bottom-0 left-0 z-20 h-1 w-full bg-white/10">
+        <div class="h-full bg-moov-orange transition-all duration-300"
+             :style="`width: ${((heroIndex + 1) / heroImages.length) * 100}%`"/>
+    </div>
+
+</section>
+       
             <section class="sticky top-16 z-30 border-y border-slate-200 bg-white/95 backdrop-blur">
                 <div class="mx-auto max-w-7xl px-4">
                     <div class="flex gap-2 overflow-x-auto py-4" style="scrollbar-width:none">
@@ -545,9 +655,9 @@ const publierEvenement = (id) => {
                                     : 'border-slate-200 bg-white text-slate-700 hover:border-moov-blue/50']">
                             Tous
                         </button>
-                        <button v-for="t in typesDisponibles" :key="t.id" @click="filtreTypeId = t.id; filtrer()"
+                        <button v-for="t in typesDisponibles" :key="t.code"@click="filtreTypeId = t.code; filtrer()"
                             :class="['flex-shrink-0 whitespace-nowrap rounded-full border-2 px-5 py-2 text-sm font-bold transition',
-                                filtreTypeId == t.id
+                               filtreTypeId == t.code
                                     ? 'border-moov-blue bg-moov-blue text-white shadow-sm'
                                     : 'border-slate-200 bg-white text-slate-700 hover:border-moov-blue/50']">
                             {{ t.nom }}

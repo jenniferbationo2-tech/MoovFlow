@@ -111,7 +111,7 @@ const formaterMontant = (m) => Number(m).toLocaleString('fr-FR') + ' FCFA'
 
             <Link href="/rapport-rse"
                   class="rounded-lg bg-moov-noir px-4 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-moov-noir-soft">
-                Générer rapport RSE →
+                Générer rapport RSE 
             </Link>
         </div>
 
@@ -138,7 +138,7 @@ const formaterMontant = (m) => Number(m).toLocaleString('fr-FR') + ' FCFA'
                     </button>
                     <button @click="reinitialiser"
                             class="rounded-lg border-2 border-border-soft bg-white px-4 py-2 text-sm font-bold text-text-sub transition hover:bg-page-bg">
-                        Reset
+                        Renitialiser
                     </button>
                 </div>
             </div>

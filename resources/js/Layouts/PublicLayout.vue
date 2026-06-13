@@ -48,7 +48,7 @@ const dashboardUrl = computed(() => {
 // ACTIONS
 const logout = () => router.post('/logout')
 
-// ─── INFO FOOTER ────────────────────────────
+// ─── INFO FOOTER
 const anneeCourante = new Date().getFullYear()
 </script>
 
@@ -274,8 +274,8 @@ const anneeCourante = new Date().getFullYear()
                             </span>
                         </div>
                         <p class="mt-3 max-w-md text-sm text-slate-50 leading-relaxed">
-                            Plateforme officielle de gestion événementielle de Moov Africa Burkina,
-                            développée par la Direction de la Communication Institutionnelle et des Relations Publiques.
+                            Plateforme  de gestion événementielle de Moov Africa Burkina,
+                            
                         </p>
                         <p class="mt-2 text-xs font-bold uppercase tracking-wider text-moov-orange">
                             Moov Africa Burkina · dCIRP

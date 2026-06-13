@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Models\User;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -12,56 +13,78 @@ use Illuminate\Validation\ValidationException;
 
 class LoginRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
         return true;
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, ValidationRule|array<mixed>|string>
-     */
     public function rules(): array
     {
         return [
-            'email' => ['required', 'string', 'email'],
+            'email'    => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
         ];
     }
 
-    /**
-     * Attempt to authenticate the request's credentials.
-     *
-     * @throws ValidationException
-     */
     public function authenticate(): void
     {
         $this->ensureIsNotRateLimited();
 
+        // Récupérer l'utilisateur pour le compteur de tentatives
+        $user = User::where('email', $this->string('email')->toString())->first();
+
+        // Vérifier si le compte est verrouillé par notre système (pas le rate limiter Laravel)
+        if ($user && $user->compte_verrouille) {
+            throw ValidationException::withMessages([
+                'email' => 'Votre compte est verrouillé après plusieurs tentatives échouées. Contactez l\'administrateur.',
+            ]);
+        }
+
+        // Tentative de connexion
         if (! Auth::attempt([
-            'email' => $this->string('email')->toString(),
-            'password' => $this->string('password')->toString(),
+            'email'     => $this->string('email')->toString(),
+            'password'  => $this->string('password')->toString(),
             'is_active' => true,
         ], $this->boolean('remember'))) {
+
             RateLimiter::hit($this->throttleKey());
 
+            // Incrémenter le compteur de tentatives
+            if ($user) {
+                $user->tentatives_connexion = ($user->tentatives_connexion ?? 0) + 1;
+
+                if ($user->tentatives_connexion >= 3) {
+                    $user->compte_verrouille = true;
+                    $user->save();
+
+                    throw ValidationException::withMessages([
+                        'email' => 'Compte verrouillé après 3 tentatives échouées. Contactez l\'administrateur.',
+                    ]);
+                }
+
+                $restantes = 3 - $user->tentatives_connexion;
+                $user->save();
+
+                throw ValidationException::withMessages([
+                    'email' => "Erreur de connexion. Il vous reste {$restantes} tentative(s), veuillez réessayer.",
+                ]);
+            }
+
+            // Email inconnu → message générique (sécurité)
             throw ValidationException::withMessages([
-                'email' => trans('auth.failed'),
+                'email' => 'Erreur de connexion. Vérifiez vos identifiants.',
             ]);
+        }
+
+        // Connexion réussie → on remet les tentatives à zéro
+        if ($user) {
+            $user->tentatives_connexion = 0;
+            $user->save();
         }
 
         RateLimiter::clear($this->throttleKey());
     }
 
-    /**
-     * Ensure the login request is not rate limited.
-     *
-     * @throws ValidationException
-     */
     public function ensureIsNotRateLimited(): void
     {
         if (! RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
@@ -73,16 +96,10 @@ class LoginRequest extends FormRequest
         $seconds = RateLimiter::availableIn($this->throttleKey());
 
         throw ValidationException::withMessages([
-            'email' => trans('auth.throttle', [
-                'seconds' => $seconds,
-                'minutes' => ceil($seconds / 60),
-            ]),
+            'email' => "Trop de tentatives. Réessayez dans " . ceil($seconds / 60) . " minute(s).",
         ]);
     }
 
-    /**
-     * Get the rate limiting throttle key for the request.
-     */
     public function throttleKey(): string
     {
         return Str::transliterate(Str::lower($this->string('email')).'|'.$this->ip());

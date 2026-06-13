@@ -102,12 +102,12 @@ const aDesInscriptions = computed(() => props.kpis.total_inscriptions > 0)
                 <span class="rounded-md bg-page-bg px-2.5 py-1 text-xs font-bold uppercase tracking-wider">
                     {{ evenement.type_evenement?.nom }}
                 </span>
-                <span>📅 {{ formaterDate(evenement.date_debut) }}</span>
-                <span v-if="evenement.lieu">📍 {{ evenement.lieu.nom }}</span>
+                <span> {{ formaterDate(evenement.date_debut) }}</span>
+                <span v-if="evenement.lieu"> {{ evenement.lieu.nom }}</span>
             </div>
         </div>
 
-        <!-- ════════ ENGAGEMENT (3 KPIs) ════════ -->
+        
         <div class="mb-6">
             <h2 class="mb-3 font-display text-sm font-bold uppercase tracking-wider text-text-sub">
                 Engagement

@@ -110,7 +110,7 @@ const onReglementChange = (e) => {
     reglementNouveauNom.value = file?.name ?? null
 }
 
-// ── SOUMISSION ──────────────────────────────────
+
 const enregistrer = () => {
     if (props.isEdit) {
         // Pour update avec multipart, on utilise la méthode POST avec _method=put
