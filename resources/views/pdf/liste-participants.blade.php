@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Liste des participants - {{ $evenement->titre }}</title>
-    <style>
+    <style @nonce>
         @page {
             margin: 80px 30px 60px 30px;
         }

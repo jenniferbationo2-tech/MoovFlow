@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Rapport RSE - {{ $evenement->titre }}</title>
-    <style>
+    <style @nonce>
         body { font-family: DejaVu Sans, sans-serif; color: #0f172a; margin: 28px; font-size: 14px; }
         h1 { color: #0066b3; margin-bottom: 6px; }
         .muted { color: #64748b; margin-bottom: 20px; }

@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
@@ -35,7 +34,7 @@ class AuthenticatedSessionController extends Controller
         return redirect()->intended(route('dashboard', absolute: false));
     }
 
-    // Participant ou autre → page publique des événements
+    // Participant ou autre ,page publique des événements
     return redirect()->intended('/evenements');
 }
 

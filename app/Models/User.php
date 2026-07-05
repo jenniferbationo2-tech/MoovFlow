@@ -45,23 +45,25 @@ class User extends Authenticatable
         ];
     }
 
-     function getActivitylogOptions(): LogOptions
-    {
-        return LogOptions::defaults()
-            ->useLogName('user')
-            ->logOnly([
-                'name',
-                'nom',
-                'prenom',
-                'email',
-                'telephone',
-                'is_active',
-            ])
-            ->logOnlyDirty()
-            ->setDescriptionForEvent(
-                fn(string $eventName): string => "Utilisateur {$eventName}"
-            );
-    }
+    public function getActivitylogOptions(): LogOptions
+{
+    return LogOptions::defaults()
+        ->useLogName('user')
+        ->logOnly([
+            'nom',
+            'prenom',
+            'email',
+            'is_active',
+        ])
+        ->logOnlyDirty()           // Log seulement si les valeurs changent vraiment
+        ->dontSubmitEmptyLogs()    // Pas de log si rien n'a changé
+        ->dontLogIfAttributesChangedOnly([
+            'tentatives_connexion', // Ignorer les tentatives de connexion
+            'bloque_jusqu_a',       // Ignorer le blocage automatique
+            'remember_token',       // Ignorer le token
+            'updated_at',           // Ignorer les timestamps
+        ]);
+}
 
     public function inscriptions(): HasMany
     {

@@ -17,9 +17,10 @@ const form = useForm({
 })
 
 const submit = () => {
-    form.post(route('login'), {
-        onFinish: () => form.reset('password'),
-    })
+   form.post('/login', {
+    onFinish: () => form.reset('password'),
+    onError: () => form.reset('password'),
+})
 }
 </script>
 
@@ -122,7 +123,7 @@ const submit = () => {
                                     <label class="text-xs font-bold uppercase tracking-wider text-slate-600">
                                         Mot de passe
                                     </label>
-                                    <Link v-if="canResetPassword" :href="route('password.request')"
+                                    <Link v-if="canResetPassword" href="/forgot-password"
                                           class="text-xs font-bold text-[#1B4A8B] transition hover:text-[#FF8000]">
                                         Oublié ?
                                     </Link>
@@ -185,7 +186,7 @@ const submit = () => {
                         <!-- Lien register -->
                         <p class="text-center text-sm text-slate-600">
                             Pas encore de compte ?
-                            <Link :href="route('register')"
+                            <Link href="/register"
                                   class="font-bold text-[#FF8000] transition hover:text-[#1B4A8B]">
                                 Créer un compte 
                             </Link>

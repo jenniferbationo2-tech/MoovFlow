@@ -30,13 +30,13 @@ class LoginRequest extends FormRequest
     {
         $this->ensureIsNotRateLimited();
 
-        // Récupérer l'utilisateur pour le compteur de tentatives
         $user = User::where('email', $this->string('email')->toString())->first();
 
-        // Vérifier si le compte est verrouillé par notre système (pas le rate limiter Laravel)
-        if ($user && $user->compte_verrouille) {
+        // Vérifier si le compte est bloqué par notre système
+        if ($user && $user->bloque_jusqu_a && now()->lt($user->bloque_jusqu_a)) {
+            $minutesRestantes = (int) now()->diffInMinutes($user->bloque_jusqu_a) + 1;
             throw ValidationException::withMessages([
-                'email' => 'Votre compte est verrouillé après plusieurs tentatives échouées. Contactez l\'administrateur.',
+                'email' => "Votre compte est temporairement bloqué. Réessayez dans {$minutesRestantes} minute(s).",
             ]);
         }
 
@@ -49,16 +49,16 @@ class LoginRequest extends FormRequest
 
             RateLimiter::hit($this->throttleKey());
 
-            // Incrémenter le compteur de tentatives
             if ($user) {
                 $user->tentatives_connexion = ($user->tentatives_connexion ?? 0) + 1;
 
                 if ($user->tentatives_connexion >= 3) {
-                    $user->compte_verrouille = true;
+                    // Bloquer pour 15 minutes
+                    $user->bloque_jusqu_a = now()->addMinutes(15);
                     $user->save();
 
                     throw ValidationException::withMessages([
-                        'email' => 'Compte verrouillé après 3 tentatives échouées. Contactez l\'administrateur.',
+                        'email' => 'Compte bloqué après 3 tentatives échouées. Réessayez dans 15 minute(s).',
                     ]);
                 }
 
@@ -70,15 +70,16 @@ class LoginRequest extends FormRequest
                 ]);
             }
 
-            // Email inconnu → message générique (sécurité)
+            // Email inconnu → message générique
             throw ValidationException::withMessages([
                 'email' => 'Erreur de connexion. Vérifiez vos identifiants.',
             ]);
         }
 
-        // Connexion réussie → on remet les tentatives à zéro
+        // Connexion réussie → reset les tentatives
         if ($user) {
             $user->tentatives_connexion = 0;
+            $user->bloque_jusqu_a       = null;
             $user->save();
         }
 

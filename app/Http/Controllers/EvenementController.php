@@ -37,7 +37,7 @@ class EvenementController extends Controller
 
         $evenements = $query->latest('date_debut')->paginate(12);
 
-        // ─── CALCUL DES KPIs (basé sur tous les events visibles) ────
+        // CALCUL DES KPIs (basé sur tous les events visibles) 
         $statutsAffichables = ['publie', 'en_cours', 'termine'];
         $baseQueryKpi = Evenement::query()
             ->whereIn('statut', $statutsAffichables);
@@ -80,7 +80,7 @@ class EvenementController extends Controller
         try {
             $evenement->load('objectifsRse');
         } catch (\Exception $e) {
-            // Relation non existante, on ignore
+            
         }
 
 
@@ -99,13 +99,11 @@ class EvenementController extends Controller
 
         return Inertia::render('Evenements/Show', [
             'evenement'       => $evenement,
-            'postesBenevoles' => $postesBenevoles,  // 🆕
+            'postesBenevoles' => $postesBenevoles,  
         ]);
     }
 
-    /**
-     * Affichage du formulaire de création (wizard).
-     */
+/*formulaire de création d'événement*/
     public function create(Request $request): Response
     {
         $user = Auth::user();

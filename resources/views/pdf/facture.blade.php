@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Facture {{ $facture->numero_facture }}</title>
-    <style>
+    <style @nonce>
         body {
             font-family: DejaVu Sans, sans-serif;
             color: #1e293b;

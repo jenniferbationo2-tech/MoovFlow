@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Présentation - {{ $evenement->titre }}</title>
-    <style>
+    <style @nonce>
         body { margin: 0; font-family: Arial, sans-serif; background: #f8fafc; color: #0f172a; }
         .slide { min-height: 100vh; padding: 56px; box-sizing: border-box; page-break-after: always; }
         .hero { background: linear-gradient(135deg, #0066b3, #00a651); color: white; }

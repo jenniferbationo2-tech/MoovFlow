@@ -29,7 +29,7 @@ const genererTous = async () => {
     })
 }
 
-const envoyerEmail = (certificat) => {
+const envoyerEmail = async (certificat) => {
     if (await !$confirm(`Envoyer le certificat à ${certificat.user.email} ?`)) return
     router.post(`/certificats/${certificat.id}/envoyer-email`, {}, {
         preserveScroll: true,
