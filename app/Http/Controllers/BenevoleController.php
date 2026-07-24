@@ -13,9 +13,14 @@ use Inertia\Response;
 
 class BenevoleController extends Controller
 {
-    // ════════════════════════════════════════
-    //   CÔTÉ PARTICIPANT
-    // ════════════════════════════════════════
+
+    public function index($evenement)
+    {
+        return inertia('Logistique/Benevoles/Index', [
+            'evenement' => $evenement
+        ]);
+    }
+
 
     /**
      * Candidater à un poste bénévole.
@@ -197,9 +202,7 @@ class BenevoleController extends Controller
         return back()->with('success', 'Candidature refusée. Le bénévole a été notifié avec le motif.');
     }
 
-    // ════════════════════════════════════════
-    //   MÉTHODES PRIVÉES
-    // ════════════════════════════════════════
+
 
     private function authorizeStaff(PosteBenevole $poste): void
     {

@@ -11,9 +11,10 @@ class ExampleTest extends TestCase
      * A basic test example.
      */
     public function test_the_application_returns_a_successful_response(): void
-    {
-        $response = $this->get('/');
-
-        $response->assertStatus(200);
-    }
+{
+    // Remplace assertStatus(200) par assertStatus(302)
+    // car la page d'accueil redirige vers /login si non connecté
+    $response = $this->get('/');
+    $response->assertStatus(302);
+}
 }

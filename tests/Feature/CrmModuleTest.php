@@ -162,7 +162,7 @@ class CrmModuleTest extends TestCase
         ]);
         $participant->assignRole('participant');
 
-        $type = TypeEvenement::query()->create([
+        $type = TypeEvenement::firstOrCreate([
             'nom' => 'Salon',
             'code' => 'salon',
         ]);
@@ -187,7 +187,7 @@ class CrmModuleTest extends TestCase
         $evenement->inscriptions()->create([
             'user_id' => $participant->id,
             'tarif_id' => null,
-            'statut' => 'valide',
+            'statut' => 'confirmee',
             'qr_code' => 'crm-qr-code',
         ]);
 

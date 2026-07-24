@@ -36,7 +36,7 @@ class UserController extends Controller
         }
 
         if ($request->filled('role')) {
-            $query->whereHas('roles', fn ($r) => $r->where('name', $request->role));
+            $query->whereHas('roles', fn($r) => $r->where('name', $request->role));
         }
 
         if ($request->filled('statut')) {
@@ -44,13 +44,13 @@ class UserController extends Controller
                 $query->where('is_active', true)->whereNull('bloque_jusqu_a');
             } elseif ($request->statut === 'bloque') {
                 $query->whereNotNull('bloque_jusqu_a')
-                      ->where('bloque_jusqu_a', '>', now());
+                    ->where('bloque_jusqu_a', '>', now());
             } elseif ($request->statut === 'desactive') {
                 $query->where('is_active', false);
             }
         }
 
-        $users = $query->latest()->paginate(15)->through(fn (User $u): array => [
+        $users = $query->latest()->paginate(15)->through(fn(User $u): array => [
             'id'                   => $u->id,
             'nom'                  => $u->nom,
             'prenom'               => $u->prenom,
@@ -82,6 +82,20 @@ class UserController extends Controller
             'filters'          => $request->only(['search', 'role', 'statut']),
         ]);
     }
+
+    public function create()
+    {
+        return inertia('Admin/Users/Create');
+    }
+
+public function edit(User $user)
+{
+    return inertia('Admin/Users/Edit', [
+        'user' => $user
+    ]);
+}
+
+
 
     public function store(Request $request): RedirectResponse
     {
@@ -143,7 +157,8 @@ class UserController extends Controller
 
         $user->update(['is_active' => !$user->is_active]);
 
-        return back()->with('success',
+        return back()->with(
+            'success',
             $user->is_active
                 ? "Compte {$user->prenom} {$user->nom} activé."
                 : "Compte {$user->prenom} {$user->nom} désactivé."
@@ -186,15 +201,15 @@ class UserController extends Controller
         $user->load('roles');
 
         $activitesRecentes = Activity::where(function ($q) use ($user) {
-                $q->where(function ($sub) use ($user) {
-                    $sub->where('subject_type', User::class)
-                        ->where('subject_id', $user->id);
-                })->orWhere('causer_id', $user->id);
-            })
+            $q->where(function ($sub) use ($user) {
+                $sub->where('subject_type', User::class)
+                    ->where('subject_id', $user->id);
+            })->orWhere('causer_id', $user->id);
+        })
             ->latest()
             ->take(20)
             ->get()
-            ->map(fn ($a) => [
+            ->map(fn($a) => [
                 'id'               => $a->id,
                 'log_name'         => $a->log_name,
                 'event'            => $a->event,
@@ -210,12 +225,12 @@ class UserController extends Controller
             ->where('log_name', 'request')
             ->where(function ($q) {
                 $q->where('properties->url', 'like', '%/login%')
-                  ->orWhere('properties->route', 'like', '%login%');
+                    ->orWhere('properties->route', 'like', '%login%');
             })
             ->latest()
             ->take(15)
             ->get()
-            ->map(fn ($a) => [
+            ->map(fn($a) => [
                 'id'         => $a->id,
                 'created_at' => $a->created_at->toIso8601String(),
                 'created_at_human' => $a->created_at->locale('fr')->diffForHumans(),
@@ -233,7 +248,7 @@ class UserController extends Controller
             ->latest()
             ->take(10)
             ->get()
-            ->map(fn ($e) => [
+            ->map(fn($e) => [
                 'id'                 => $e->id,
                 'titre'              => $e->titre,
                 'statut'             => $e->statut,
@@ -246,35 +261,35 @@ class UserController extends Controller
 
         $kpis = [
             'total_activites' => Activity::where(function ($q) use ($user) {
-                                    $q->where('causer_id', $user->id)
-                                      ->orWhere(function ($sub) use ($user) {
-                                          $sub->where('subject_type', User::class)
-                                              ->where('subject_id', $user->id);
-                                      });
-                                })->count(),
+                $q->where('causer_id', $user->id)
+                    ->orWhere(function ($sub) use ($user) {
+                        $sub->where('subject_type', User::class)
+                            ->where('subject_id', $user->id);
+                    });
+            })->count(),
 
             'total_connexions' => Activity::where('causer_id', $user->id)
-                                          ->where('log_name', 'request')
-                                          ->where(function ($q) {
-                                              $q->where('properties->url', 'like', '%/login%')
-                                                ->orWhere('properties->route', 'like', '%login%');
-                                          })
-                                          ->count(),
+                ->where('log_name', 'request')
+                ->where(function ($q) {
+                    $q->where('properties->url', 'like', '%/login%')
+                        ->orWhere('properties->route', 'like', '%login%');
+                })
+                ->count(),
 
             'connexions_echec' => Activity::where('causer_id', $user->id)
-                                          ->where('log_name', 'request')
-                                          ->where(function ($q) {
-                                              $q->where('properties->url', 'like', '%/login%')
-                                                ->orWhere('properties->route', 'like', '%login%');
-                                          })
-                                          ->whereNotIn('properties->status', [200, 302])
-                                          ->count(),
+                ->where('log_name', 'request')
+                ->where(function ($q) {
+                    $q->where('properties->url', 'like', '%/login%')
+                        ->orWhere('properties->route', 'like', '%login%');
+                })
+                ->whereNotIn('properties->status', [200, 302])
+                ->count(),
 
             'evenements_crees' => Evenement::where('created_by', $user->id)->count(),
 
             'jours_anciennete' => $user->created_at
-                                    ? Carbon::parse($user->created_at)->diffInDays(now())
-                                    : 0,
+                ? Carbon::parse($user->created_at)->diffInDays(now())
+                : 0,
         ];
 
         return Inertia::render('Admin/Users/Show', [
@@ -327,7 +342,7 @@ class UserController extends Controller
             ->with('success', "Compte de {$nom} archivé. Les logs sont conservés.");
     }
 
-    
+
     public function restore(int $id): RedirectResponse
     {
         Gate::authorize('manage-users');
