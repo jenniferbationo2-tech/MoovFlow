@@ -61,7 +61,7 @@ const erreursEtape1 = computed(() => {
 
 const peutPasserEtape2 = computed(() => erreursEtape1.value.length === 0)
 
-// ── NAVIGATION WIZARD ───────────────────────────
+//  NAVIGATION WIZARD 
 const allerEtape = (n) => {
     if (n > etapeActuelle.value && !peutPasserEtape2.value && etapeActuelle.value === 1) {
         return
@@ -90,7 +90,7 @@ const retirerTarif = (i) => {
     form.tarifs.splice(i, 1)
 }
 
-// ── VISUEL & PDF ────────────────────────────────
+//  VISUEL & PDF 
 const previewVisuel = ref(props.evenement?.visuel_url ?? null)
 const onVisuelChange = (e) => {
     const file = e.target.files[0]
@@ -135,7 +135,7 @@ const enregistrer = () => {
     }
 }
 
-// ── DÉTECTION TYPE POUR INFO ────────────────────
+// DÉTECTION TYPE POUR INFO 
 const typeSelectionne = computed(() =>
     props.typesEvenement?.find(t => t.id === Number(form.type_evenement_id))
 )
@@ -181,7 +181,7 @@ const typeSelectionne = computed(() =>
             </div>
         </div>
 
-        <!-- ════════════ ÉTAPE 1 : INFORMATIONS ════════════ -->
+        <!--  ÉTAPE 1 : INFORMATIONS  -->
         <div v-if="etapeActuelle === 1" class="rounded-2xl bg-card shadow-card">
 
             <div class="border-b border-border-soft p-6">

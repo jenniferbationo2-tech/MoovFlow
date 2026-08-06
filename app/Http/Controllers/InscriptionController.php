@@ -203,9 +203,9 @@ class InscriptionController extends Controller
         }
     }
 
-    // ════════════════════════════════════════
+    
     //   NIVEAU 2 : DOSSIER COMPLET
-    // ════════════════════════════════════════
+    
 
     public function dossierComplet(Request $request, Inscription $inscription): InertiaResponse|RedirectResponse
     {

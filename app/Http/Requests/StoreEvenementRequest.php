@@ -26,7 +26,7 @@ class StoreEvenementRequest extends FormRequest
             'titre' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'visuel' => ['nullable', 'image', 'max:5120'],
-            'reglement_pdf'          => ['nullable', 'file', 'mimes:pdf', 'max:10240'], 
+            'reglement_pdf'          => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:10240'], 
             'type_evenement_id' => ['required', 'integer', 'exists:types_evenement,id'],
             'date_debut' => ['required', 'date'],
             'date_fin' => ['required', 'date', 'after:date_debut'],
