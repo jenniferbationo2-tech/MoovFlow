@@ -73,6 +73,7 @@ const onReglementChange = (e) => {
                         <p v-if="reglementNom" class="mt-2 text-xs text-emerald-600">
                             ✓ {{ reglementNom }}
                         </p>
+                        <p v-else class="mt-1 text-xs text-text-muted">PDF uniquement · taille maximale : 10 Mo</p>
                     </div>
                 </div>
             </div>

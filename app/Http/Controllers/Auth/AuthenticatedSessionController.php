@@ -14,8 +14,17 @@ use Illuminate\Support\Facades\Route;
 class AuthenticatedSessionController extends Controller
 {
     
-    public function create(): Response
+    public function create(Request $request): Response
     {
+        // Si un paramètre redirect est fourni, le sauvegarder comme URL intended
+        if ($request->filled('redirect')) {
+            $redirect = $request->query('redirect');
+            // Sécurité : vérifier que c'est une URL interne
+            if (str_starts_with($redirect, '/') && !str_starts_with($redirect, '//')) {
+                session()->put('url.intended', url($redirect));
+            }
+        }
+
         return Inertia::render('Auth/Login', [
             'canResetPassword' => Route::has('password.request'),
             'status' => session('status'),
@@ -23,20 +32,26 @@ class AuthenticatedSessionController extends Controller
     }
 
     public function store(LoginRequest $request): RedirectResponse
-{
-    $request->authenticate();
-    $request->session()->regenerate();
+    {
+        $request->authenticate();
+        $request->session()->regenerate();
 
-    $user = $request->user();
+        $user = $request->user();
 
-  
-    if ($user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur'])) {
-        return redirect()->intended(route('dashboard', absolute: false));
+        // Si une URL était mémorisée avant la redirection vers login, on la respecte pour tous les rôles
+        $intended = $request->session()->pull('url.intended');
+
+        if ($intended && $intended !== url('/') && $intended !== route('login')) {
+            return redirect($intended);
+        }
+
+        if ($user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur'])) {
+            return redirect()->route('dashboard');
+        }
+
+        // Participant ou autre → page publique des événements
+        return redirect('/evenements');
     }
-
-    // Participant ou autre ,page publique des événements
-    return redirect()->intended('/evenements');
-}
 
     public function destroy(Request $request): RedirectResponse
     {

@@ -112,8 +112,8 @@ class EnqueteController extends Controller
     {
         $user = Auth::user();
 
-        // 2 cas : organisateur/admin OU participant
-        $estOrganisateurOuAdmin = $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']);
+        // 2 cas : organisateur/responsable OU participant
+        $estOrganisateurOuAdmin = $user->hasAnyRole(['responsable_dcirp', 'organisateur']);
 
         // Données communes
         $data = [
@@ -214,7 +214,7 @@ class EnqueteController extends Controller
         $user = Auth::user();
 
         abort_unless(
-            $user->hasAnyRole(['admin', 'responsable_dcirp']) ||
+            $user->hasRole('responsable_dcirp') ||
                 ($user->hasRole('organisateur') && $evenement->created_by === $user->id),
             403,
             'Vous n\'avez pas accès à cet événement.'
@@ -225,9 +225,13 @@ class EnqueteController extends Controller
     {
         $user = Auth::user();
 
-        // Récupérer les événements où l'user est inscrit (validé ou présent)
+        // Récupérer les événements où l'user est inscrit avec les vrais statuts
         $evenementsIds = \App\Models\Inscription::where('user_id', $user->id)
-            ->whereIn('statut', ['validee', 'presente'])
+            ->whereIn('statut', [
+                \App\Models\Inscription::STATUT_CONFIRMEE,
+                \App\Models\Inscription::STATUT_PRESENT,
+                \App\Models\Inscription::STATUT_ACCEPTEE,
+            ])
             ->pluck('evenement_id');
 
         // Enquêtes publiées de ces événements
@@ -266,10 +270,14 @@ class EnqueteController extends Controller
             'Cette enquête n\'est pas ouverte aux réponses.'
         );
 
-        // Vérifier que l'user est inscrit à l'événement
+        // Vérifier que l'user est inscrit à l'événement avec les vrais statuts
         $estInscrit = \App\Models\Inscription::where('user_id', $user->id)
             ->where('evenement_id', $enquete->evenement_id)
-            ->whereIn('statut', ['validee', 'presente'])
+            ->whereIn('statut', [
+                \App\Models\Inscription::STATUT_CONFIRMEE,
+                \App\Models\Inscription::STATUT_PRESENT,
+                \App\Models\Inscription::STATUT_ACCEPTEE,
+            ])
             ->exists();
 
         abort_unless($estInscrit, 403, 'Vous n\'êtes pas inscrit à cet événement.');

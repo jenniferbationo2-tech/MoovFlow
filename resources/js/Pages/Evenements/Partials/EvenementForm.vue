@@ -31,7 +31,7 @@ const form = useForm({
     visuel:             null,
     reglement_pdf:      null,
 
-    budget_previsionnel: props.evenement?.budget_previsionnel ?? null,
+    budget_previsionnel: props.evenement?.budget_prev ?? null,
     tarifs:              props.evenement?.tarifs?.length
         ? props.evenement.tarifs.map(t => ({
             id: t.id,
@@ -52,9 +52,12 @@ const erreursEtape1 = computed(() => {
     if (!form.type_evenement_id) erreurs.push('Le type d\'événement est requis')
     if (!form.lieu_id) erreurs.push('Le lieu est requis')
     if (!form.date_debut) erreurs.push('La date de début est requise')
+    else if (!props.isEdit && new Date(form.date_debut) < new Date()) {
+        erreurs.push('La date de début ne peut pas être dans le passé')
+    }
     if (!form.date_fin) erreurs.push('La date de fin est requise')
-    if (form.date_debut && form.date_fin && new Date(form.date_fin) < new Date(form.date_debut)) {
-        erreurs.push('La date de fin doit être après la date de début')
+    if (form.date_debut && form.date_fin && new Date(form.date_fin) <= new Date(form.date_debut)) {
+        erreurs.push('La date de fin doit être strictement après la date de début')
     }
     return erreurs
 })

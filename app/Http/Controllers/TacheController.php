@@ -7,6 +7,7 @@ use App\Models\Tache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 
 class TacheController extends Controller
@@ -47,6 +48,8 @@ class TacheController extends Controller
      */
     public function store(Request $request, Evenement $evenement): RedirectResponse
     {
+        $this->authorizeStaff($evenement);
+
         $validated = $request->validate([
             'titre' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
@@ -95,6 +98,9 @@ class TacheController extends Controller
      */
     public function update(Request $request, Tache $tache): RedirectResponse
     {
+        $tache->load('evenement');
+        $this->authorizeStaff($tache->evenement);
+
         $validated = $request->validate([
             'titre' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
@@ -113,6 +119,8 @@ class TacheController extends Controller
      */
     public function destroy(Tache $tache): RedirectResponse
     {
+        $tache->load('evenement');
+        $this->authorizeStaff($tache->evenement);
         $tache->delete();
 
         return back()->with('success', 'Tâche supprimée avec succès.');
@@ -123,6 +131,9 @@ class TacheController extends Controller
      */
     public function updateStatut(Request $request, Tache $tache): RedirectResponse
     {
+        $tache->load('evenement');
+        $this->authorizeStaff($tache->evenement);
+
         $validated = $request->validate([
             'statut' => ['required', Rule::in(['a_faire', 'en_cours', 'termine'])],
         ]);
@@ -153,5 +164,17 @@ class TacheController extends Controller
                 'name' => $tache->responsable->name,
             ] : null,
         ];
+    }
+
+    private function authorizeStaff(?Evenement $evenement): void
+    {
+        $user = Auth::user();
+        abort_unless($user !== null, 403);
+        abort_unless(
+            $user->hasRole('responsable_dcirp') ||
+            ($user->hasRole('organisateur') && $evenement && $evenement->created_by === $user->id),
+            403,
+            'Vous n\'êtes pas autorisé à gérer les tâches de cet événement.'
+        );
     }
 }

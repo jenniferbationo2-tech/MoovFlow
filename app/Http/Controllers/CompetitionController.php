@@ -5,12 +5,15 @@ namespace App\Http\Controllers;
 use App\Models\Classement;
 use App\Models\CompetitionPhase;
 use App\Models\Equipe;
+use App\Models\EquipeMembre;
 use App\Models\Evenement;
+use App\Models\Inscription;
 use App\Models\Rencontre;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -25,10 +28,10 @@ class CompetitionController extends Controller
 
         $evenement->load(['typeEvenement', 'lieu']);
 
-        // Charger toutes les équipes de l'événement
+        // Charger toutes les équipes de l'événement, avec leurs membres (participants inscrits)
         $equipes = Equipe::query()
             ->where('evenement_id', $evenement->id)
-            ->withCount('membres')
+            ->with(['membres.user:id,nom,prenom'])
             ->orderBy('nom')
             ->get()
             ->map(fn (Equipe $e) => [
@@ -36,9 +39,34 @@ class CompetitionController extends Controller
                 'nom'          => $e->nom,
                 'capitaine'    => $e->capitaine ?? null,
                 'categorie'    => $e->categorie ?? null,
-                'membres_count'=> $e->membres_count ?? 0,
+                'membres'      => $e->membres->map(fn (EquipeMembre $m) => [
+                    'id'   => $m->id,
+                    'role' => $m->role,
+                    'user' => $m->user ? [
+                        'id'          => $m->user->id,
+                        'nom_complet' => trim($m->user->prenom.' '.$m->user->nom),
+                    ] : null,
+                ])->all(),
                 'created_at'   => optional($e->created_at)?->toIso8601String(),
             ])->all();
+
+        // Participants déjà affectés à une équipe de cet événement (pour les exclure de la liste des disponibles)
+        $equipeIds = Equipe::where('evenement_id', $evenement->id)->pluck('id');
+        $userIdsAffectes = EquipeMembre::whereIn('equipe_id', $equipeIds)->pluck('user_id');
+
+        // Participants inscrits (dossier accepté/confirmé/présent) et pas encore dans une équipe
+        $participantsDisponibles = Inscription::query()
+            ->where('evenement_id', $evenement->id)
+            ->whereIn('statut', [Inscription::STATUT_CONFIRMEE, Inscription::STATUT_ACCEPTEE, Inscription::STATUT_PRESENT])
+            ->whereNotIn('user_id', $userIdsAffectes)
+            ->with('user:id,nom,prenom')
+            ->get()
+            ->pluck('user')
+            ->filter()
+            ->unique('id')
+            ->map(fn ($u) => ['id' => $u->id, 'nom_complet' => trim($u->prenom.' '.$u->nom)])
+            ->values()
+            ->all();
 
         // Charger toutes les phases
         $phases = CompetitionPhase::query()
@@ -105,9 +133,10 @@ class CompetitionController extends Controller
                 'type'  => $evenement->typeEvenement?->code,
                 'lieu'  => $evenement->lieu ? ['nom' => $evenement->lieu->nom] : null,
             ],
-            'equipes'     => $equipes,
-            'phases'      => $phases,
-            'classements' => $classements,
+            'equipes'                 => $equipes,
+            'phases'                  => $phases,
+            'classements'             => $classements,
+            'participantsDisponibles' => $participantsDisponibles,
         ]);
     }
 
@@ -146,6 +175,44 @@ class CompetitionController extends Controller
         return back()->with('success', 'Équipe supprimée.');
     }
 
+    //   MEMBRES D'ÉQUIPE
+
+    public function storeMembre(Request $request, Evenement $evenement, Equipe $equipe): RedirectResponse
+    {
+        $this->authorizeAccess($evenement);
+        abort_unless($equipe->evenement_id === $evenement->id, 403);
+
+        $validated = $request->validate([
+            'user_id' => ['required', 'exists:users,id'],
+            'role'    => ['required', Rule::in(['capitaine', 'membre'])],
+        ]);
+
+        // Un participant ne peut appartenir qu'à une seule équipe pour cet événement.
+        $dejaAffecte = EquipeMembre::whereHas('equipe', fn ($q) => $q->where('evenement_id', $evenement->id))
+            ->where('user_id', $validated['user_id'])
+            ->exists();
+        abort_if($dejaAffecte, 422, 'Ce participant fait déjà partie d\'une équipe pour cet événement.');
+
+        if ($validated['role'] === 'capitaine') {
+            // Un seul capitaine par équipe : on rétrograde l'ancien s'il y en a un.
+            $equipe->membres()->where('role', 'capitaine')->update(['role' => 'membre']);
+        }
+
+        $equipe->membres()->create($validated);
+
+        return back()->with('success', 'Membre ajouté à l\'équipe.');
+    }
+
+    public function destroyMembre(Evenement $evenement, Equipe $equipe, EquipeMembre $membre): RedirectResponse
+    {
+        $this->authorizeAccess($evenement);
+        abort_unless($equipe->evenement_id === $evenement->id && $membre->equipe_id === $equipe->id, 403);
+
+        $membre->delete();
+
+        return back()->with('success', 'Membre retiré de l\'équipe.');
+    }
+
     //   PHASES
     
 
@@ -182,7 +249,70 @@ class CompetitionController extends Controller
         return back()->with('success', 'Phase supprimée.');
     }
 
-    
+    /**
+     * Génère automatiquement la phase suivante en appariant les vainqueurs
+     * de la phase donnée (ex : vainqueurs des quarts → demi-finales).
+     */
+    public function genererPhaseSuivante(Request $request, Evenement $evenement, CompetitionPhase $phase): RedirectResponse
+    {
+        $this->authorizeAccess($evenement);
+        abort_unless($phase->evenement_id === $evenement->id, 403);
+
+        $rencontres = $phase->rencontres()->orderBy('id')->get();
+
+        if ($rencontres->isEmpty()) {
+            return back()->withErrors(['generation' => 'Cette phase ne contient aucune rencontre.']);
+        }
+
+        if ($rencontres->contains(fn (Rencontre $r) => $r->statut !== 'terminee')) {
+            return back()->withErrors(['generation' => 'Toutes les rencontres de cette phase doivent être terminées avant de générer la phase suivante.']);
+        }
+
+        if ($rencontres->contains(fn (Rencontre $r) => $r->vainqueur_id === null)) {
+            return back()->withErrors(['generation' => 'Certaines rencontres se sont terminées sur un score nul : désignez un vainqueur (prolongations / tirs au but) avant de générer la phase suivante.']);
+        }
+
+        $vainqueurs = $rencontres->pluck('vainqueur_id')->values();
+
+        if ($vainqueurs->count() < 2) {
+            return back()->withErrors(['generation' => 'Il ne reste qu\'une seule équipe qualifiée : c\'est la championne, il n\'y a pas de phase suivante à générer.']);
+        }
+
+        $paires = $vainqueurs->chunk(2)->filter(fn ($p) => count($p) === 2)->values();
+
+        $validated = $request->validate([
+            'nom'        => ['required', 'string', 'max:255'],
+            'dates'      => ['required', 'array', 'size:'.$paires->count()],
+            'dates.*'    => ['required', 'date'],
+            'lieu_match' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        DB::transaction(function () use ($evenement, $phase, $validated, $paires) {
+            $ordre = (int) CompetitionPhase::where('evenement_id', $evenement->id)->max('ordre') + 1;
+
+            $nouvellePhase = CompetitionPhase::create([
+                'evenement_id' => $evenement->id,
+                'nom'          => $validated['nom'],
+                'ordre'        => $ordre,
+                'statut'       => 'a_venir',
+            ]);
+
+            foreach ($paires as $i => $paire) {
+                Rencontre::create([
+                    'competition_phase_id' => $nouvellePhase->id,
+                    'equipe_a_id'          => $paire[0],
+                    'equipe_b_id'          => $paire[1],
+                    'date_match'           => $validated['dates'][$i],
+                    'lieu_match'           => $validated['lieu_match'] ?? null,
+                    'statut'               => 'planifiee',
+                ]);
+            }
+        });
+
+        return back()->with('success', 'Phase suivante générée avec succès.');
+    }
+
+
     //   RENCONTRE
 
     public function storeRencontre(Request $request, Evenement $evenement, CompetitionPhase $phase): RedirectResponse
@@ -345,14 +475,14 @@ class CompetitionController extends Controller
     }
 
     /**
-     * Vérifie l'accès à la compétition (admin/responsable/créateur).
+     * Vérifie l'accès à la compétition (responsable/créateur).
      */
     private function authorizeAccess(Evenement $evenement): void
     {
         $user = Auth::user();
         abort_unless(
             $user && (
-                $user->hasAnyRole(['admin', 'responsable_dcirp']) ||
+                $user->hasRole('responsable_dcirp') ||
                 (int) $evenement->created_by === (int) $user->id
             ),
             403,

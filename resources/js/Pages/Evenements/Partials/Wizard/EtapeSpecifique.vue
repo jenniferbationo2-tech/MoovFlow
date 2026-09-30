@@ -670,6 +670,14 @@ const supprimerConferencier = (form, index) => {
                            class="w-full rounded-lg border-2 border-border-soft bg-white px-4 py-3 text-sm outline-none focus:border-moov-blue"/>
                 </div>
             </div>
+
+            <!-- Typologie personnalisée sans champs spécifiques prédéfinis -->
+            <div v-else class="rounded-xl border-2 border-dashed border-border-soft p-8 text-center">
+                <p class="font-bold text-text-main">Aucun champ spécifique pour cette typologie</p>
+                <p class="mt-1 text-sm text-text-sub">
+                    Vous pouvez passer directement à l'étape suivante.
+                </p>
+            </div>
         </div>
 
         <!-- Footer -->

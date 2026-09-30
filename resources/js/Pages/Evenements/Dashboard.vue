@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { Link } from '@inertiajs/vue3'
+import { Link, useForm } from '@inertiajs/vue3'
 import DashboardLayout from '@/Layouts/DashboardLayout.vue'
 import DoughnutChart from '@/Components/Charts/DoughnutChart.vue'
 import BarChart from '@/Components/Charts/BarChart.vue'
@@ -9,7 +9,37 @@ const props = defineProps({
     evenement:           { type: Object, required: true },
     kpis:                { type: Object, required: true },
     statutsInscriptions: { type: Array, required: true },
+    objectifRse:         { type: Object, default: null },
+    peutModifierRse:     { type: Boolean, default: false },
 })
+
+// ─── BILAN D'IMPACT RSE ───
+const typesImpact = [
+    'Éducation',
+    'Santé',
+    'Environnement',
+    'Inclusion sociale',
+    'Emploi & Entrepreneuriat',
+    'Sport & Culture',
+    'Autre',
+]
+
+const rseForm = useForm({
+    type_impact:                props.objectifRse?.type_impact ?? typesImpact[0],
+    nb_beneficiaires_directs:   props.objectifRse?.nb_beneficiaires_directs ?? props.kpis.beneficiaires_reels,
+    nb_beneficiaires_indirects: props.objectifRse?.nb_beneficiaires_indirects ?? 0,
+    nb_femmes_beneficiaires:    props.objectifRse?.nb_femmes_beneficiaires ?? 0,
+    nb_associations_soutenues:  props.objectifRse?.nb_associations_soutenues ?? 0,
+    nb_projets_accompagnes:     props.objectifRse?.nb_projets_accompagnes ?? 0,
+    nb_emplois_crees:           props.objectifRse?.nb_emplois_crees ?? 0,
+    montants_collectes:         props.objectifRse?.montants_collectes ?? 0,
+    retombees_partenaires:      props.objectifRse?.retombees_partenaires ?? 0,
+    score_environnemental:      props.objectifRse?.score_environnemental ?? null,
+})
+
+const enregistrerBilanRse = () => {
+    rseForm.post(`/evenements/${props.evenement.id}/objectifs-rse`, { preserveScroll: true })
+}
 
 // ─── HELPERS ───
 const formaterNombre = (n) => Number(n).toLocaleString('fr-FR')
@@ -271,6 +301,147 @@ const aDesInscriptions = computed(() => props.kpis.total_inscriptions > 0)
                             {{ Math.round((kpis.beneficiaires_reels / kpis.cible_beneficiaires) * 100) }}%
                         </strong>
                     </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════ BILAN D'IMPACT RSE ════════ -->
+        <div class="mb-6">
+            <h2 class="mb-3 font-display text-sm font-bold uppercase tracking-wider text-text-sub">
+                Bilan d'impact RSE
+            </h2>
+            <div class="rounded-xl bg-white p-5 shadow-card sm:p-6">
+
+                <template v-if="peutModifierRse">
+                    <p class="mb-5 text-sm text-text-sub">
+                        Déclarez l'impact réel de cet événement. Le nombre de bénéficiaires directs est pré-rempli
+                        avec les présences confirmées ; ajustez-le si l'impact dépasse les seuls inscrits.
+                    </p>
+
+                    <form @submit.prevent="enregistrerBilanRse" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+
+                        <div>
+                            <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-muted">
+                                Type d'impact
+                            </label>
+                            <select v-model="rseForm.type_impact"
+                                    class="w-full rounded-lg border-2 border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue">
+                                <option v-for="t in typesImpact" :key="t" :value="t">{{ t }}</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-muted">
+                                Bénéficiaires directs *
+                            </label>
+                            <input v-model.number="rseForm.nb_beneficiaires_directs" type="number" min="0"
+                                   class="w-full rounded-lg border-2 border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue"
+                                   :class="rseForm.errors.nb_beneficiaires_directs ? 'border-red-400' : ''"/>
+                            <p v-if="rseForm.errors.nb_beneficiaires_directs" class="mt-1 text-xs text-red-600">
+                                {{ rseForm.errors.nb_beneficiaires_directs }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-muted">
+                                Bénéficiaires indirects
+                            </label>
+                            <input v-model.number="rseForm.nb_beneficiaires_indirects" type="number" min="0"
+                                   class="w-full rounded-lg border-2 border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                        </div>
+
+                        <div>
+                            <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-muted">
+                                Femmes bénéficiaires
+                            </label>
+                            <input v-model.number="rseForm.nb_femmes_beneficiaires" type="number" min="0"
+                                   class="w-full rounded-lg border-2 border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue"
+                                   :class="rseForm.errors.nb_femmes_beneficiaires ? 'border-red-400' : ''"/>
+                            <p v-if="rseForm.errors.nb_femmes_beneficiaires" class="mt-1 text-xs text-red-600">
+                                {{ rseForm.errors.nb_femmes_beneficiaires }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-muted">
+                                Associations soutenues
+                            </label>
+                            <input v-model.number="rseForm.nb_associations_soutenues" type="number" min="0"
+                                   class="w-full rounded-lg border-2 border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                        </div>
+
+                        <div>
+                            <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-muted">
+                                Projets accompagnés
+                            </label>
+                            <input v-model.number="rseForm.nb_projets_accompagnes" type="number" min="0"
+                                   class="w-full rounded-lg border-2 border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                        </div>
+
+                        <div>
+                            <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-muted">
+                                Emplois créés
+                            </label>
+                            <input v-model.number="rseForm.nb_emplois_crees" type="number" min="0"
+                                   class="w-full rounded-lg border-2 border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                        </div>
+
+                        <div>
+                            <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-muted">
+                                Montants collectés (FCFA)
+                            </label>
+                            <input v-model.number="rseForm.montants_collectes" type="number" min="0" step="0.01"
+                                   class="w-full rounded-lg border-2 border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                        </div>
+
+                        <div>
+                            <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-muted">
+                                Retombées partenaires (FCFA)
+                            </label>
+                            <input v-model.number="rseForm.retombees_partenaires" type="number" min="0" step="0.01"
+                                   class="w-full rounded-lg border-2 border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                        </div>
+
+                        <div>
+                            <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-muted">
+                                Score environnemental (/100)
+                            </label>
+                            <input v-model.number="rseForm.score_environnemental" type="number" min="0" max="100" step="0.1"
+                                   class="w-full rounded-lg border-2 border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                        </div>
+
+                        <div class="flex items-end sm:col-span-2 lg:col-span-3">
+                            <button type="submit" :disabled="rseForm.processing"
+                                    class="rounded-lg bg-moov-noir px-6 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-moov-noir-soft disabled:cursor-not-allowed disabled:opacity-50">
+                                {{ objectifRse ? 'Mettre à jour le bilan' : 'Enregistrer le bilan' }}
+                            </button>
+                        </div>
+                    </form>
+                </template>
+
+                <template v-else-if="objectifRse">
+                    <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Type d'impact</p>
+                            <p class="mt-1 text-sm font-bold text-text-main">{{ objectifRse.type_impact }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Bénéficiaires directs</p>
+                            <p class="mt-1 text-sm font-bold text-text-main">{{ formaterNombre(objectifRse.nb_beneficiaires_directs) }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Femmes bénéficiaires</p>
+                            <p class="mt-1 text-sm font-bold text-text-main">{{ formaterNombre(objectifRse.nb_femmes_beneficiaires) }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Associations soutenues</p>
+                            <p class="mt-1 text-sm font-bold text-text-main">{{ formaterNombre(objectifRse.nb_associations_soutenues) }}</p>
+                        </div>
+                    </div>
+                </template>
+
+                <div v-else class="py-6 text-center text-sm text-text-sub">
+                    Aucun bilan d'impact RSE renseigné pour cet événement.
                 </div>
             </div>
         </div>

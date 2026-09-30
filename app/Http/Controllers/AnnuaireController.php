@@ -22,7 +22,7 @@ class AnnuaireController extends Controller
         $user = Auth::user();
 
         abort_unless(
-            $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']),
+            $user->hasAnyRole(['responsable_dcirp', 'organisateur']),
             403,
             'Accès réservé au staff.'
         );
@@ -33,7 +33,7 @@ class AnnuaireController extends Controller
             ->whereHas('inscriptions');
 
         // Si organisateur → uniquement les participants de SES événements
-        if ($user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp'])) {
+        if ($user->hasRole('organisateur') && !$user->hasRole('responsable_dcirp')) {
             $participantQuery->whereHas('inscriptions.evenement',
                 fn ($q) => $q->where('created_by', $user->id)
             );
@@ -105,7 +105,7 @@ class AnnuaireController extends Controller
             ->whereHas('roles', fn ($q) => $q->where('name', 'participant'))
             ->whereHas('inscriptions');
 
-        if ($user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp'])) {
+        if ($user->hasRole('organisateur') && !$user->hasRole('responsable_dcirp')) {
             $statsQuery->whereHas('inscriptions.evenement',
                 fn ($q) => $q->where('created_by', $user->id)
             );
@@ -114,7 +114,7 @@ class AnnuaireController extends Controller
         $totalParticipants = (clone $statsQuery)->count();
 
         $inscriptionsQuery = Inscription::query();
-        if ($user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp'])) {
+        if ($user->hasRole('organisateur') && !$user->hasRole('responsable_dcirp')) {
             $inscriptionsQuery->whereHas('evenement', fn ($q) => $q->where('created_by', $user->id));
         }
 
@@ -137,7 +137,7 @@ class AnnuaireController extends Controller
         $evenements = Evenement::query()
             ->select('id', 'titre')
             ->when(
-                $user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp']),
+                $user->hasRole('organisateur') && !$user->hasRole('responsable_dcirp'),
                 fn ($q) => $q->where('created_by', $user->id)
             )
             ->orderBy('titre')
@@ -159,7 +159,7 @@ class AnnuaireController extends Controller
         $auth = Auth::user();
 
         abort_unless(
-            $auth->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']),
+            $auth->hasAnyRole(['responsable_dcirp', 'organisateur']),
             403
         );
 
@@ -171,7 +171,7 @@ class AnnuaireController extends Controller
 
         // Si organisateur → uniquement les inscriptions à ses événements
         $inscriptions = $user->inscriptions;
-        if ($auth->hasRole('organisateur') && !$auth->hasAnyRole(['admin', 'responsable_dcirp'])) {
+        if ($auth->hasRole('organisateur') && !$auth->hasRole('responsable_dcirp')) {
             $inscriptions = $inscriptions->filter(fn ($i) =>
                 $i->evenement && (int) $i->evenement->created_by === (int) $auth->id
             );

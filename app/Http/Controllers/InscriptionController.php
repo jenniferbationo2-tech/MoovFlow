@@ -27,7 +27,7 @@ class InscriptionController extends Controller
     {
         $user = Auth::user();
         abort_unless(
-            $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']),
+            $user && $user->hasAnyRole(['responsable_dcirp', 'organisateur']),
             403,
             'Accès réservé au staff.'
         );
@@ -39,8 +39,8 @@ class InscriptionController extends Controller
                 'evenement.typeEvenement:id,nom,code',
             ]);
 
-        // Si organisateur (pas admin/responsable) : voir seulement SES événements
-        if ($user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp'])) {
+        // Si organisateur (pas responsable) : voir seulement SES événements
+        if ($user->hasRole('organisateur') && !$user->hasRole('responsable_dcirp')) {
             $query->whereHas('evenement', fn ($q) => $q->where('created_by', $user->id));
         }
 
@@ -79,7 +79,7 @@ class InscriptionController extends Controller
         // Liste des événements pour le filtre
         $evenements = Evenement::query()
             ->when(
-                $user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp']),
+                $user->hasRole('organisateur') && !$user->hasRole('responsable_dcirp'),
                 fn ($q) => $q->where('created_by', $user->id)
             )
             ->orderBy('titre')
@@ -91,7 +91,7 @@ class InscriptionController extends Controller
             'evenements'   => $evenements,
             'filters'      => $request->only(['statut', 'evenement_id', 'niveau', 'search']),
             'userRole'     => [
-                'estResponsable'  => $user->hasAnyRole(['admin', 'responsable_dcirp']),
+                'estResponsable'  => $user->hasRole('responsable_dcirp'),
                 'estOrganisateur' => $user->hasRole('organisateur'),
             ],
         ]);
@@ -101,7 +101,7 @@ class InscriptionController extends Controller
     {
         $query = Inscription::query();
 
-        if ($user->hasRole('organisateur') && !$user->hasAnyRole(['admin', 'responsable_dcirp'])) {
+        if ($user->hasRole('organisateur') && !$user->hasRole('responsable_dcirp')) {
             $query->whereHas('evenement', fn ($q) => $q->where('created_by', $user->id));
         }
 
@@ -249,14 +249,23 @@ class InscriptionController extends Controller
         $rules = $this->reglesValidationDossier($typeCode);
         $validated = $request->validate($rules);
 
+        // Retirer le token des données validées (pas de colonne dans dossiers_inscription)
+        $dossierData = collect($validated)->except(['token'])->toArray();
+
         DB::beginTransaction();
 
         try {
-            $inscription->update(array_merge($validated, [
-                'statut' => Inscription::STATUT_DOSSIER_SOUMIS,
-                'token_acces' => null, // Invalider le token
+            // Créer ou mettre à jour le DossierInscription
+            \App\Models\DossierInscription::updateOrCreate(
+                ['inscription_id' => $inscription->id],
+                $dossierData
+            );
+
+            $inscription->update([
+                'statut'          => Inscription::STATUT_DOSSIER_SOUMIS,
+                'token_acces'     => null,
                 'token_expire_at' => null,
-            ]));
+            ]);
 
             $this->emailService->envoyer($inscription, EmailLog::TYPE_DOSSIER_RECU);
 
@@ -267,7 +276,8 @@ class InscriptionController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'Erreur : ' . $e->getMessage());
+            \Log::error("Erreur soumission dossier inscription #{$inscription->id} : " . $e->getMessage());
+            return back()->with('error', 'Une erreur est survenue lors de la soumission. Veuillez réessayer.');
         }
     }
 
@@ -278,7 +288,7 @@ class InscriptionController extends Controller
     public function preselectionner(Inscription $inscription): RedirectResponse
     {
         $user = Auth::user();
-        abort_unless($user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']), 403);
+        abort_unless($user->hasAnyRole(['responsable_dcirp', 'organisateur']), 403);
         abort_unless($inscription->peutEtrePreselectionne(), 422, 'Cette inscription ne peut pas être présélectionnée.');
 
         DB::beginTransaction();
@@ -317,7 +327,7 @@ class InscriptionController extends Controller
     public function recommander(Request $request, Inscription $inscription): RedirectResponse
     {
         $user = Auth::user();
-        abort_unless($user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']), 403);
+        abort_unless($user->hasAnyRole(['responsable_dcirp', 'organisateur']), 403);
         abort_unless($inscription->peutEtreRecommandee(), 422, 'Cette inscription ne peut pas être recommandée.');
 
         $request->validate([
@@ -341,7 +351,7 @@ class InscriptionController extends Controller
     public function valider(Inscription $inscription): RedirectResponse
     {
         $user = Auth::user();
-        abort_unless($user->hasAnyRole(['admin', 'responsable_dcirp']), 403, 'Seul le responsable dCIRP peut valider.');
+        abort_unless($user->hasRole('responsable_dcirp'), 403, 'Seul le responsable dCIRP peut valider.');
         abort_unless($inscription->peutEtreValidee(), 422, 'Cette inscription ne peut pas être validée.');
 
         DB::beginTransaction();
@@ -377,7 +387,7 @@ class InscriptionController extends Controller
     public function refuser(Request $request, Inscription $inscription): RedirectResponse
     {
         $user = Auth::user();
-        abort_unless($user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']), 403);
+        abort_unless($user->hasAnyRole(['responsable_dcirp', 'organisateur']), 403);
         abort_unless($inscription->peutEtreRefusee(), 422, 'Cette inscription ne peut pas être refusée.');
 
         $request->validate([
@@ -416,7 +426,7 @@ class InscriptionController extends Controller
 
         // Sécurité : seul le proprio ou staff peut voir
         $isOwner = $user && $inscription->user_id === $user->id;
-        $isStaff = $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']);
+        $isStaff = $user && $user->hasAnyRole(['responsable_dcirp', 'organisateur']);
 
         abort_unless($isOwner || $isStaff, 403);
 
@@ -437,7 +447,7 @@ class InscriptionController extends Controller
             return Inertia::render('Inscriptions/Detail', [
                 'inscription' => $inscription,
                 'userRole'    => [
-                    'estResponsable'  => $user->hasAnyRole(['admin', 'responsable_dcirp']),
+                    'estResponsable'  => $user->hasRole('responsable_dcirp'),
                     'estOrganisateur' => $user->hasRole('organisateur'),
                 ],
             ]);
@@ -543,7 +553,7 @@ class InscriptionController extends Controller
 
         // Seul le staff peut télécharger
         abort_unless(
-            $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']),
+            $user && $user->hasAnyRole(['responsable_dcirp', 'organisateur']),
             403,
             'Accès non autorisé.'
         );

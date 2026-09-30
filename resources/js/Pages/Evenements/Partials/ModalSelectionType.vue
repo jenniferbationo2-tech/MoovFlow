@@ -1,4 +1,6 @@
 <script setup>
+import { Link } from '@inertiajs/vue3'
+
 const props = defineProps({
     types: { type: Array, required: true },
 })
@@ -67,9 +69,9 @@ const choisir = (type) => {
 
                 <!-- ── FOOTER ── -->
                 <div class="border-t border-slate-200 bg-slate-50 px-8 py-3 rounded-b-2xl">
-                    <a href="/evenements" class="text-xs font-bold text-slate-600 transition hover:text-moov-blue">
+                    <Link href="/evenements" class="text-xs font-bold text-slate-600 transition hover:text-moov-blue">
                         ← Annuler et retourner à la liste
-                    </a>
+                    </Link>
                 </div>
             </div>
         </div>

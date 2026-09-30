@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, onMounted, watch } from 'vue'
-import { Link, usePage } from '@inertiajs/vue3'
+import { Link, usePage, useForm } from '@inertiajs/vue3'
 import DashboardLayout from '@/Layouts/DashboardLayout.vue'
 import { Doughnut } from 'vue-chartjs'
 import {
@@ -18,9 +18,7 @@ const props = defineProps({
     kpis:                   Object,
     // Admin
     activiteRecente:        Array,
-    prochainsEvenements:    Array,
     repartitionRoles:       Array,
-    completionEvenements:   Object,
     // Responsable
     statsRSE:               Object,
     performanceTypes:       Array,
@@ -31,9 +29,6 @@ const props = defineProps({
     // Participant
     mesProchainsEvenements: Array,
     recommandes:            Array,
-    // NOUVEAU — Notifications + Camembert
-    notifications:          { type: Array, default: () => [] },
-    repartitionTypes:       { type: Array, default: () => [] },
 })
 
 const page = usePage()
@@ -63,6 +58,22 @@ const formaterDateRelative = (d) => {
     return formaterDate(d)
 }
 
+// ─── ENVELOPPE BUDGÉTAIRE RSE (responsable) ───
+const editionEnveloppe = ref(false)
+const enveloppeForm = useForm({ budget_enveloppe_rse: props.statsRSE?.budget_enveloppe ?? 0 })
+
+const ouvrirEditionEnveloppe = () => {
+    enveloppeForm.budget_enveloppe_rse = props.statsRSE?.budget_enveloppe ?? 0
+    editionEnveloppe.value = true
+}
+
+const enregistrerEnveloppe = () => {
+    enveloppeForm.post('/dashboard/enveloppe-rse', {
+        preserveScroll: true,
+        onSuccess: () => { editionEnveloppe.value = false },
+    })
+}
+
 const labelStatutInscription = (s) => ({
     en_attente: 'a soumis un dossier',
     en_analyse: 'dossier en analyse',
@@ -90,13 +101,6 @@ const labelRole = (r) => ({
     benevole:          'Bénévoles',
     jury:              'Jury',
 }[r] || r)
-
-const couleurRole = (r) => ({
-    admin:             'bg-red-500',
-    responsable_dcirp: 'bg-purple-500',
-    organisateur:      'bg-orange-500',
-    participant:       'bg-emerald-500',
-}[r] || 'bg-slate-400')
 
 const couleurType = (code) => ({
     BARA_MOUSSO: 'bg-amber-50 text-amber-700',
@@ -142,10 +146,21 @@ const totalUtilisateurs = computed(() =>
     (props.repartitionRoles ?? []).reduce((acc, r) => acc + r.total, 0)
 )
 
-const totalEvenements = computed(() => {
-    if (!props.completionEvenements) return 0
-    return Object.values(props.completionEvenements).reduce((acc, v) => acc + v, 0)
-})
+const labelLogName = (n) => ({
+    user:        'Utilisateur',
+    evenement:   'Événement',
+    inscription: 'Inscription',
+    paiement:    'Paiement',
+    request:     'Requête',
+}[n] || n)
+
+const couleurLogName = (n) => ({
+    user:        'bg-purple-50 text-purple-700',
+    evenement:   'bg-blue-50 text-blue-700',
+    inscription: 'bg-emerald-50 text-emerald-700',
+    paiement:    'bg-amber-50 text-amber-700',
+}[n] || 'bg-slate-100 text-slate-600')
+
 const maxPerformance = computed(() => {
     if (!props.performanceTypes?.length) return 0
     return Math.max(...props.performanceTypes.map(p => p.total))
@@ -162,20 +177,6 @@ const couleursTypeHex = {
     SALON:       '#6366f1',  // indigo
 }
 
-
-const chartData = computed(() => {
-    const types = props.repartitionTypes ?? []
-    return {
-        labels: types.map(t => t.nom),
-        datasets: [{
-            data: types.map(t => t.total),
-            backgroundColor: types.map(t => couleursTypeHex[t.code] ?? '#94a3b8'),
-            borderColor: '#fff',
-            borderWidth: 3,
-            hoverOffset: 8,
-        }]
-    }
-})
 
 // Données pour le Doughnut Chart RESPONSABLE (performance par type)
 const chartDataPerformance = computed(() => {
@@ -219,16 +220,6 @@ const chartOptions = {
     }
 }
 
-const totalEvenementsTypes = computed(() =>
-    (props.repartitionTypes ?? []).reduce((acc, t) => acc + t.total, 0)
-)
-
-const styleNotification = (type) => ({
-    danger:  { border: 'border-red-500',     bg: 'bg-red-50',     text: 'text-red-700',     icon: 'bg-red-100 text-red-600' },
-    warning: { border: 'border-amber-500',   bg: 'bg-amber-50',   text: 'text-amber-700',   icon: 'bg-amber-100 text-amber-600' },
-    info:    { border: 'border-blue-500',    bg: 'bg-blue-50',    text: 'text-blue-700',    icon: 'bg-blue-100 text-blue-600' },
-    success: { border: 'border-emerald-500', bg: 'bg-emerald-50', text: 'text-emerald-700', icon: 'bg-emerald-100 text-emerald-600' },
-}[type] || { border: 'border-slate-400', bg: 'bg-slate-50', text: 'text-slate-700', icon: 'bg-slate-100 text-slate-600' })
 </script>
 
 <template>
@@ -246,7 +237,7 @@ const styleNotification = (type) => ({
                     Bonjour, {{ userPrenom }}
                 </h1>
                 <p class="mt-1 text-sm text-text-sub">
-                    Vue d'ensemble du système et de l'activité
+                    Administration système : utilisateurs, sécurité et journal d'activité
                 </p>
             </div>
 
@@ -259,23 +250,6 @@ const styleNotification = (type) => ({
                     <p class="mt-1 text-xs text-text-sub">Voir tous →</p>
                 </Link>
 
-                <Link href="/evenements"
-                      class="rounded-xl bg-card p-5 shadow-card transition hover:shadow-card-hover">
-                    <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Événements publiés</p>
-                    <p class="mt-2 font-display text-3xl font-extrabold text-emerald-600">{{ kpis.evenements_publies }}</p>
-                    <p class="mt-1 text-xs text-text-sub">Gérer →</p>
-                </Link>
-
-                <Link href="/inscriptions?statut=en_attente"
-                      class="rounded-xl bg-card p-5 shadow-card transition hover:shadow-card-hover">
-                    <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Dossiers à analyser</p>
-                    <p class="mt-2 font-display text-3xl font-extrabold"
-                       :class="kpis.dossiers_a_analyser > 0 ? 'text-amber-600' : 'text-text-muted'">
-                        {{ kpis.dossiers_a_analyser }}
-                    </p>
-                    <p class="mt-1 text-xs text-text-sub">{{ kpis.dossiers_a_analyser > 0 ? 'Action requise →' : 'À jour' }}</p>
-                </Link>
-
                 <Link href="/admin/users?statut=bloque"
                       class="rounded-xl bg-card p-5 shadow-card transition hover:shadow-card-hover">
                     <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Comptes bloqués</p>
@@ -285,34 +259,53 @@ const styleNotification = (type) => ({
                     </p>
                     <p class="mt-1 text-xs text-text-sub">{{ kpis.comptes_bloques > 0 ? 'Vérifier →' : 'Aucun blocage' }}</p>
                 </Link>
+
+                <Link href="/admin/users"
+                      class="rounded-xl bg-card p-5 shadow-card transition hover:shadow-card-hover">
+                    <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Nouveaux (7 jours)</p>
+                    <p class="mt-2 font-display text-3xl font-extrabold text-emerald-600">{{ kpis.nouveaux_7j }}</p>
+                    <p class="mt-1 text-xs text-text-sub">Comptes créés</p>
+                </Link>
+
+                <Link href="/admin/audit"
+                      class="rounded-xl bg-card p-5 shadow-card transition hover:shadow-card-hover">
+                    <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Actions (24h)</p>
+                    <p class="mt-2 font-display text-3xl font-extrabold text-purple-600">{{ kpis.actions_24h }}</p>
+                    <p class="mt-1 text-xs text-text-sub">Journal d'audit →</p>
+                </Link>
             </div>
 
-            <!-- Activité + Prochains -->
-            <div class="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <!-- Journal d'activité + Répartition des rôles -->
+            <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <div class="rounded-xl bg-card shadow-card">
-                    <div class="border-b border-border-soft p-5">
-                        <h2 class="font-display text-base font-bold text-text-main">Activité récente</h2>
-                        <p class="mt-1 text-xs text-text-sub">5 dernières actions sur la plateforme</p>
+                    <div class="flex items-center justify-between border-b border-border-soft p-5">
+                        <div>
+                            <h2 class="font-display text-base font-bold text-text-main">Journal d'activité</h2>
+                            <p class="mt-1 text-xs text-text-sub">Dernières actions sur la plateforme</p>
+                        </div>
+                        <Link href="/admin/audit" class="text-xs font-bold text-moov-orange hover:text-moov-orange-dark">
+                            Voir tout →
+                        </Link>
                     </div>
                     <div v-if="activiteRecente?.length" class="divide-y divide-border-soft">
-                        <div v-for="a in activiteRecente" :key="a.id"
+                        <Link v-for="a in activiteRecente" :key="a.id"
+                             :href="`/admin/audit/${a.id}`"
                              class="flex items-start gap-3 p-4 transition hover:bg-page-bg/50">
                             <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-moov-blue text-xs font-bold text-white">
-                                {{ initiales(a.user) }}
+                                {{ a.causer !== 'Système' ? initiales(a.causer) : '⚙' }}
                             </div>
                             <div class="min-w-0 flex-1">
                                 <p class="text-sm text-text-main">
-                                    <span class="font-bold">{{ a.user }}</span>
-                                    {{ labelStatutInscription(a.statut) }}
+                                    <span class="font-bold">{{ a.causer }}</span>
+                                    — {{ a.description }}
                                 </p>
-                                <p class="text-xs text-text-sub">Pour : <span class="font-bold">{{ a.evenement }}</span></p>
                                 <p class="mt-1 text-xs text-text-muted">{{ formaterDateRelative(a.created_at) }}</p>
                             </div>
                             <span :class="['rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
-                                couleurStatutInscription(a.statut)]">
-                                {{ a.statut.replace('_', ' ') }}
+                                couleurLogName(a.log_name)]">
+                                {{ labelLogName(a.log_name) }}
                             </span>
-                        </div>
+                        </Link>
                     </div>
                     <div v-else class="p-10 text-center text-sm text-text-sub">
                         Aucune activité récente
@@ -321,153 +314,30 @@ const styleNotification = (type) => ({
 
                 <div class="rounded-xl bg-card shadow-card">
                     <div class="border-b border-border-soft p-5">
-                        <h2 class="font-display text-base font-bold text-text-main">Prochains événements</h2>
-                        <p class="mt-1 text-xs text-text-sub">Événements publiés à venir</p>
-                    </div>
-                    <div v-if="prochainsEvenements?.length" class="divide-y divide-border-soft">
-                        <Link v-for="ev in prochainsEvenements" :key="ev.id"
-                              :href="`/evenements/${ev.id}`"
-                              class="flex items-start gap-3 p-4 transition hover:bg-page-bg/50">
-                            <div class="flex h-12 w-12 flex-shrink-0 flex-col items-center justify-center rounded-lg bg-page-bg">
-                                <p class="font-display text-base font-extrabold leading-none text-text-main">
-                                    {{ new Date(ev.date_debut).getDate().toString().padStart(2, '0') }}
-                                </p>
-                                <p class="text-[10px] font-bold uppercase text-text-sub">
-                                    {{ new Date(ev.date_debut).toLocaleDateString('fr-FR', { month: 'short' }).toUpperCase().replace('.', '') }}
-                                </p>
-                            </div>
-                            <div class="min-w-0 flex-1">
-                                <p class="line-clamp-1 font-bold text-text-main">{{ ev.titre }}</p>
-                                <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-sub">
-                                    <span v-if="ev.lieu">{{ ev.lieu }}</span>
-                                    <span v-if="ev.lieu && ev.type">·</span>
-                                    <span v-if="ev.type"
-                                          :class="['rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider',
-                                              couleurType(ev.type.code)]">
-                                        {{ ev.type.nom }}
-                                    </span>
-                                </div>
-                            </div>
-                        </Link>
-                    </div>
-                    <div v-else class="p-10 text-center text-sm text-text-sub">
-                        Aucun événement à venir
-                    </div>
-                </div>
-            </div>
-
-           <!-- ════ NOTIFICATIONS (panneau d'alertes) ════ -->
-            <div v-if="notifications.length > 0" class="mb-8 rounded-xl bg-card shadow-card">
-                <div class="border-b border-border-soft p-5">
-                    <h2 class="flex items-center gap-2 font-display text-base font-bold text-text-main">
-                        <svg class="h-5 w-5 text-moov-orange" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-                        </svg>
-                        Notifications
-                    </h2>
-                    <p class="mt-1 text-xs text-text-sub">Actions importantes</p>
-                </div>
-                <div class="divide-y divide-border-soft">
-                    <component v-for="(notif, i) in notifications" :key="i"
-                          :is="notif.href ? 'a' : 'div'"
-                          :href="notif.href"
-                          :class="['flex items-center gap-3 p-4 border-l-4 transition',
-                              styleNotification(notif.type).border,
-                              notif.href ? 'hover:bg-page-bg/50 cursor-pointer' : '']">
-                        <div :class="['flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full',
-                            styleNotification(notif.type).icon]">
-                            <svg v-if="notif.type === 'success'" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-                            </svg>
-                            <svg v-else-if="notif.type === 'danger'" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                            </svg>
-                            <svg v-else-if="notif.type === 'warning'" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                            <svg v-else class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                        </div>
-                        <p :class="['flex-1 text-sm font-bold', styleNotification(notif.type).text]">
-                            {{ notif.titre }}
+                        <h2 class="font-display text-base font-bold text-text-main">
+                            Répartition des utilisateurs
+                        </h2>
+                        <p class="mt-1 text-xs text-text-sub">
+                            Total : {{ totalUtilisateurs }} compte{{ totalUtilisateurs > 1 ? 's' : '' }} par rôle
                         </p>
-                        <span v-if="notif.href" :class="['text-sm font-bold', styleNotification(notif.type).text]">→</span>
-                    </component>
-                </div>
-            </div>
+                    </div>
 
-            <!-- ════ CAMEMBERT + STATUT ÉVÉNEMENTS ════ -->
-            <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-
-                <!-- GAUCHE : Camembert répartition événements par type -->
-                <div class="rounded-xl bg-card p-6 shadow-card">
-                    <h2 class="mb-1 font-display text-base font-bold text-text-main">
-                        Répartition des événements
-                    </h2>
-                    <p class="mb-5 text-xs text-text-sub">
-                        Total : {{ totalEvenementsTypes }} événement{{ totalEvenementsTypes > 1 ? 's' : '' }} par typologie
-                    </p>
-
-                    <div v-if="totalEvenementsTypes > 0" class="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:items-center">
-                        <!-- Camembert -->
-                        <div class="relative h-56">
-                            <Doughnut :data="chartData" :options="chartOptions" />
-                            <!-- Total au centre -->
-                            <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                                <p class="font-display text-3xl font-extrabold text-text-main">
-                                    {{ totalEvenementsTypes }}
-                                </p>
-                                <p class="text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                                    Au total
-                                </p>
-                            </div>
-                        </div>
-
-                        <!-- Légende compacte -->
-                        <div class="space-y-2">
-                            <div v-for="t in repartitionTypes" :key="t.code"
-                                 class="flex items-center gap-2 text-sm">
-                                <span class="h-3 w-3 flex-shrink-0 rounded-full"
-                                      :style="{ backgroundColor: couleursTypeHex[t.code] || '#94a3b8' }"/>
-                                <span class="flex-1 truncate text-text-sub">{{ t.nom }}</span>
-                                <span :class="['font-bold', t.total > 0 ? 'text-text-main' : 'text-text-muted']">
-                                    {{ t.total }}
+                    <div v-if="repartitionRoles?.length" class="divide-y divide-border-soft">
+                        <div v-for="r in repartitionRoles" :key="r.role"
+                             class="flex items-center justify-between px-5 py-3.5">
+                            <span class="text-sm font-medium text-text-main">{{ labelRole(r.role) }}</span>
+                            <div class="flex items-baseline gap-3">
+                                <span class="text-xs text-text-muted">
+                                    {{ totalUtilisateurs > 0 ? Math.round((r.total / totalUtilisateurs) * 100) : 0 }}%
+                                </span>
+                                <span class="w-8 text-right font-display text-lg font-extrabold text-text-main">
+                                    {{ r.total }}
                                 </span>
                             </div>
                         </div>
                     </div>
-
-                    <div v-else class="py-10 text-center text-sm text-text-sub">
-                        Aucun événement à analyser
-                    </div>
-                </div>
-
-            
-                <div class="rounded-xl bg-card p-6 shadow-card">
-                    <h2 class="mb-1 font-display text-base font-bold text-text-main">Statut des événements</h2>
-                    <p class="mb-5 text-xs text-text-sub">Total : {{ totalEvenements }} événements</p>
-                    <div class="space-y-3 text-sm">
-                        <div class="flex items-center justify-between rounded-lg bg-amber-50/50 px-3 py-2">
-                            <span class="font-bold text-amber-700">Brouillon</span>
-                            <span class="font-display text-xl font-extrabold text-amber-600">{{ completionEvenements?.brouillon ?? 0 }}</span>
-                        </div>
-                        <div class="flex items-center justify-between rounded-lg bg-emerald-50/50 px-3 py-2">
-                            <span class="font-bold text-emerald-700">Publié</span>
-                            <span class="font-display text-xl font-extrabold text-emerald-600">{{ completionEvenements?.publie ?? 0 }}</span>
-                        </div>
-                        <div class="flex items-center justify-between rounded-lg bg-blue-50/50 px-3 py-2">
-                            <span class="font-bold text-blue-700">En cours</span>
-                            <span class="font-display text-xl font-extrabold text-blue-600">{{ completionEvenements?.en_cours ?? 0 }}</span>
-                        </div>
-                        <div class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                            <span class="font-bold text-slate-700">Terminé</span>
-                            <span class="font-display text-xl font-extrabold text-slate-600">{{ completionEvenements?.termine ?? 0 }}</span>
-                        </div>
-                        <div class="flex items-center justify-between rounded-lg bg-red-50/50 px-3 py-2">
-                            <span class="font-bold text-red-700">Annulé</span>
-                            <span class="font-display text-xl font-extrabold text-red-600">{{ completionEvenements?.annule ?? 0 }}</span>
-                        </div>
+                    <div v-else class="p-10 text-center text-sm text-text-sub">
+                        Aucun utilisateur
                     </div>
                 </div>
             </div>
@@ -947,7 +817,7 @@ const styleNotification = (type) => ({
                     <p class="mt-1 text-xs text-text-sub">Suivi actif</p>
                 </Link>
 
-                <Link href="/inscriptions?statut=en_attente"
+                <Link href="/inscriptions?statut=recommandee"
                       :class="['rounded-xl p-5 shadow-card transition hover:shadow-card-hover',
                           kpis.dossiers_a_valider > 0
                               ? 'bg-amber-50 border-2 border-amber-300'
@@ -1034,18 +904,44 @@ const styleNotification = (type) => ({
                         </p>
                     </div>
 
-                    <!-- Budget engagé -->
+                    <!-- Budget engagé / Enveloppe RSE -->
                     <div class="rounded-xl bg-white/10 p-4 backdrop-blur">
-                        <p class="text-[10px] font-bold uppercase tracking-wider text-white/70">
-                            Budget engagé
-                        </p>
-                        <p class="mt-2 font-display text-xl font-extrabold">
-                            {{ Number(statsRSE?.budget_engage ?? 0).toLocaleString('fr-FR') }}
-                            <span class="text-xs">F</span>
-                        </p>
-                        <p class="mt-1 text-[10px] text-white/70">
-                            {{ statsRSE?.taux_budget ?? 0 }}% de l'enveloppe
-                        </p>
+                        <div class="flex items-center justify-between">
+                            <p class="text-[10px] font-bold uppercase tracking-wider text-white/70">
+                                Budget engagé
+                            </p>
+                            <button v-if="!editionEnveloppe" @click="ouvrirEditionEnveloppe" type="button"
+                                    class="text-[10px] font-bold text-white/70 underline hover:text-white">
+                                {{ statsRSE?.budget_enveloppe > 0 ? 'Modifier' : "Définir l'enveloppe" }}
+                            </button>
+                        </div>
+
+                        <template v-if="!editionEnveloppe">
+                            <p class="mt-2 font-display text-xl font-extrabold">
+                                {{ Number(statsRSE?.budget_engage ?? 0).toLocaleString('fr-FR') }}
+                                <span class="text-xs">F</span>
+                            </p>
+                            <p v-if="statsRSE?.budget_enveloppe > 0" class="mt-1 text-[10px] text-white/70">
+                                {{ statsRSE?.taux_budget ?? 0 }}% de l'enveloppe
+                                ({{ Number(statsRSE.budget_enveloppe).toLocaleString('fr-FR') }} F)
+                            </p>
+                            <p v-else class="mt-1 text-[10px] text-white/70">
+                                Aucune enveloppe définie
+                            </p>
+                        </template>
+
+                        <form v-else @submit.prevent="enregistrerEnveloppe" class="mt-2 flex items-center gap-2">
+                            <input v-model.number="enveloppeForm.budget_enveloppe_rse" type="number" min="0" step="1"
+                                   class="w-full rounded-lg border-0 bg-white/90 px-2 py-1.5 text-sm font-bold text-text-main outline-none"/>
+                            <button type="submit" :disabled="enveloppeForm.processing"
+                                    class="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-moov-blue-dark disabled:opacity-50">
+                                OK
+                            </button>
+                            <button @click="editionEnveloppe = false" type="button"
+                                    class="text-xs font-bold text-white/70 hover:text-white">
+                                ✕
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>

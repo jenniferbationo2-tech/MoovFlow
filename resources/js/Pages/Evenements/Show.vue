@@ -8,7 +8,10 @@ import ConfirmModal from '@/Components/ConfirmModal.vue'
 const props = defineProps({
     evenement: Object,
     budget: Object,
+    peutGererBudget: { type: Boolean, default: false },
     postesBenevoles: { type: Array, default: () => [] },
+    dejaInscrit: { type: Boolean, default: false },
+    inscriptionId: { type: Number, default: null },
 })
 
 
@@ -19,7 +22,7 @@ const userRoles = computed(() => page.props.auth?.user?.roles?.map(r => r.name) 
 const roles = computed(() => user.value?.roles ?? [])
 
 const estStaff = computed(() =>
-    roles.value.some(r => ['admin', 'responsable_dcirp', 'organisateur'].includes(r))
+    roles.value.some(r => ['responsable_dcirp', 'organisateur'].includes(r))
 )
 const Layout = computed(() => estStaff.value ? DashboardLayout : PublicLayout)
 
@@ -220,6 +223,26 @@ const candidater = () => {
     })
 }
 
+// ─── BUDGET : ligne recette/dépense ───
+const ligneForm = useForm({
+    libelle: '',
+    montant: null,
+    type: 'depense',
+})
+
+const ajouterLigneBudget = () => {
+    ligneForm.post(`/budgets/${props.budget.id}/lignes`, {
+        preserveScroll: true,
+        onSuccess: () => ligneForm.reset(),
+    })
+}
+
+const supprimerLigneBudget = (ligne) => {
+    router.delete(`/lignes-budget/${ligne.id}`, { preserveScroll: true })
+}
+
+const formaterFCFA = (m) => Number(m ?? 0).toLocaleString('fr-FR') + ' FCFA'
+
 
 const typeCode = computed(() => props.evenement.type_evenement?.code)
 
@@ -306,7 +329,11 @@ const formaterHeure = (d) => {
 }
 
 const lienInscription = computed(() => {
-    if (!user.value) return '/login'
+    if (!user.value) {
+        // Sauvegarder l'URL actuelle comme "intended" pour redirection post-login
+        const urlPreinscription = `/evenements/${props.evenement.id}/preinscrire`
+        return `/login?redirect=${encodeURIComponent(urlPreinscription)}`
+    }
     return `/evenements/${props.evenement.id}/preinscrire`
 })
 </script>
@@ -395,13 +422,25 @@ const lienInscription = computed(() => {
                     </div>
 
                     <!-- À VENIR + peut s'inscrire -->
-                    <Link v-else-if="inscriptionOuverte" :href="lienInscription"
-                        class="inline-flex items-center gap-2 rounded-lg bg-moov-noir px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-moov-noir-soft">
-                        S'inscrire à l'événement
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
-                        </svg>
-                    </Link>
+                    <template v-else-if="inscriptionOuverte">
+                        <!-- Déjà inscrit -->
+                        <Link v-if="dejaInscrit && inscriptionId"
+                            :href="`/inscriptions/${inscriptionId}`"
+                            class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-emerald-700">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            Déjà inscrit – Voir mon dossier
+                        </Link>
+                        <!-- Pas encore inscrit -->
+                        <Link v-else :href="lienInscription"
+                            class="inline-flex items-center gap-2 rounded-lg bg-moov-noir px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-moov-noir-soft">
+                            S'inscrire à l'événement
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+                            </svg>
+                        </Link>
+                    </template>
 
                     <!-- EN COURS -->
                     <span v-else-if="statutDynamique === 'en_cours' && peutSInscrire"
@@ -451,7 +490,7 @@ const lienInscription = computed(() => {
                             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                             </svg>
-                            Liste PDF
+                            télecharger la Liste des participants
                         </a>
                         <!-- DEMANDER MODIFICATIONS : responsable (alternative au rejet) -->
                         <button v-if="peutDemanderModifs" @click="ouvrirModalModifs"
@@ -468,18 +507,18 @@ const lienInscription = computed(() => {
                             Rejeter
                         </button>
 
-                        <!-- GESTION OPÉRATIONNELLE -->
+                        <!-- GESTION OPÉRATIONNELLE (chrome neutre, icône colorée pour repère rapide) -->
                         <Link :href="`/evenements/${evenement.id}/dashboard`"
-                            class="inline-flex items-center gap-1.5 rounded-lg bg-moov-blue px-3 py-2 text-sm font-bold text-white transition hover:bg-blue-700">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-moov-blue/40 hover:bg-slate-50">
+                            <svg class="h-4 w-4 text-moov-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-6m3 6v-2m3 2v-4m1 8H4a2 2 0 01-2-2V6a2 2 0 012-2h16a2 2 0 012 2v12a2 2 0 01-2 2z"/>
                             </svg>
-                            Tableau
+                            Tableau RSE
                         </Link>
 
                         <Link :href="`/evenements/${evenement.id}/logistique`"
-                            class="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-amber-700">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-amber-400/40 hover:bg-slate-50">
+                            <svg class="h-4 w-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
                             </svg>
                             Logistique
@@ -487,8 +526,8 @@ const lienInscription = computed(() => {
 
                         <Link v-if="['SPORT', 'HACK', 'CHALLENGE', 'BARA_MOUSSO'].includes(typeCode)"
                             :href="`/evenements/${evenement.id}/competition`"
-                            class="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-violet-700">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-violet-400/40 hover:bg-slate-50">
+                            <svg class="h-4 w-4 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
                             </svg>
                             Compétition
@@ -499,24 +538,24 @@ const lienInscription = computed(() => {
 
                         <!-- COMMUNICATION & POST-ÉVÉNEMENT -->
                         <Link :href="`/evenements/${evenement.id}/communication/campaigns`"
-                            class="inline-flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-cyan-700">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-cyan-400/40 hover:bg-slate-50">
+                            <svg class="h-4 w-4 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                             </svg>
                             Campagnes
                         </Link>
 
                         <Link :href="`/evenements/${evenement.id}/communication/enquetes`"
-                            class="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-purple-700">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-purple-400/40 hover:bg-slate-50">
+                            <svg class="h-4 w-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                             </svg>
                             Enquêtes
                         </Link>
 
                         <Link :href="`/evenements/${evenement.id}/certificats`"
-                            class="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-emerald-700">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-emerald-400/40 hover:bg-slate-50">
+                            <svg class="h-4 w-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
                             </svg>
                             Certificats
@@ -657,7 +696,7 @@ const lienInscription = computed(() => {
                                     <h3 class="font-display text-base font-bold text-text-main">Règlement & consignes
                                     </h3>
                                     <p class="mt-1 text-sm text-amber-900">
-                                        Téléchargez le document officiel avant de soumettre votre dossier.
+                                         Document officiel de l'évènement.
                                     </p>
                                 </div>
                             </div>
@@ -666,6 +705,86 @@ const lienInscription = computed(() => {
                                 Télécharger le PDF
                             </a>
                         </div>
+                    </div>
+
+                    <!-- ════════ BUDGET ════════ -->
+                    <div v-if="peutGererBudget && budget" class="rounded-xl bg-card shadow-card">
+                        <div class="border-b border-border-soft p-5">
+                            <h2 class="font-display text-base font-bold text-text-main">Budget de l'événement</h2>
+                            <p class="mt-1 text-xs text-text-sub">Suivi des recettes et dépenses réelles</p>
+                        </div>
+
+                        <!-- Résumé -->
+                        <div class="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4">
+                            <div>
+                                <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Prévisionnel</p>
+                                <p class="mt-1 text-base font-extrabold text-text-main">{{ formaterFCFA(budget.montant_previsionnel) }}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Recettes</p>
+                                <p class="mt-1 text-base font-extrabold text-emerald-600">{{ formaterFCFA(budget.recettes) }}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Dépenses</p>
+                                <p class="mt-1 text-base font-extrabold text-red-600">{{ formaterFCFA(budget.depenses) }}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Solde</p>
+                                <p class="mt-1 text-base font-extrabold"
+                                   :class="budget.solde >= 0 ? 'text-emerald-600' : 'text-red-600'">
+                                    {{ formaterFCFA(budget.solde) }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Lignes -->
+                        <div v-if="budget.lignes.length" class="divide-y divide-border-soft border-t border-border-soft">
+                            <div v-for="ligne in budget.lignes" :key="ligne.id"
+                                 class="flex items-center justify-between gap-3 px-5 py-3">
+                                <div class="min-w-0 flex-1">
+                                    <p class="truncate text-sm font-semibold text-text-main">{{ ligne.libelle }}</p>
+                                    <span :class="['text-xs font-bold uppercase tracking-wider',
+                                        ligne.type === 'recette' ? 'text-emerald-600' : 'text-red-600']">
+                                        {{ ligne.type === 'recette' ? 'Recette' : 'Dépense' }}
+                                    </span>
+                                </div>
+                                <span class="text-sm font-bold text-text-main">{{ formaterFCFA(ligne.montant) }}</span>
+                                <button @click="supprimerLigneBudget(ligne)" type="button"
+                                        class="rounded-lg p-1.5 text-text-sub transition hover:bg-red-50 hover:text-red-600"
+                                        title="Supprimer">
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 3h6a1 1 0 011 1v3H8V4a1 1 0 011-1z"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Ajouter une ligne -->
+                        <form @submit.prevent="ajouterLigneBudget"
+                              class="flex flex-wrap items-end gap-3 border-t border-border-soft p-5">
+                            <div class="min-w-[10rem] flex-1">
+                                <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-muted">Libellé</label>
+                                <input v-model="ligneForm.libelle" type="text" required
+                                       class="w-full rounded-lg border-2 border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                            </div>
+                            <div class="w-32">
+                                <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-muted">Montant</label>
+                                <input v-model.number="ligneForm.montant" type="number" min="0" step="1" required
+                                       class="w-full rounded-lg border-2 border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue"/>
+                            </div>
+                            <div class="w-36">
+                                <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-muted">Type</label>
+                                <select v-model="ligneForm.type"
+                                        class="w-full rounded-lg border-2 border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue">
+                                    <option value="depense">Dépense</option>
+                                    <option value="recette">Recette</option>
+                                </select>
+                            </div>
+                            <button type="submit" :disabled="ligneForm.processing"
+                                    class="rounded-lg bg-moov-noir px-5 py-2 text-sm font-bold text-white transition hover:bg-moov-noir-soft disabled:cursor-not-allowed disabled:opacity-50">
+                                Ajouter
+                            </button>
+                        </form>
                     </div>
                 </div>
 
@@ -708,7 +827,7 @@ const lienInscription = computed(() => {
                     </div>
 
                     <!-- ════════ DEVENIR BÉNÉVOLE ════════ -->
-                    <div v-if="postesBenevoles.length > 0 && estParticipant && evenement.statut === 'publie'"
+                    <div v-if="postesBenevoles.length > 0 && estParticipant && ['publie', 'en_cours'].includes(evenement.statut)"
                         class="rounded-xl bg-white shadow-card">
                         <div class="border-b border-border-soft p-5">
                             <h3 class="font-display text-sm font-bold uppercase tracking-wider text-text-sub">

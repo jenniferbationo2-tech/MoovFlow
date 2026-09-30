@@ -31,9 +31,16 @@ class MettreAJourStatutsEvenements extends Command
             ->where('date_fin', '<', $now)
             ->update(['statut' => 'termine']);
 
+        // Terminé (ou publié/en_cours resté coincé) depuis plus d'une semaine → archivé,
+        // et disparaît donc du catalogue public.
+        $archives = Evenement::whereIn('statut', ['publie', 'en_cours', 'termine'])
+            ->where('date_fin', '<=', $now->copy()->subWeek())
+            ->update(['statut' => 'archive']);
+
         $this->info("✅ {$passesEnCours} événements passés en cours");
         $this->info("✅ {$passesEnTermine} événements passés en terminé");
         $this->info("✅ {$publiesEnTermine} événements passés directement de publié à terminé");
+        $this->info("✅ {$archives} événements archivés (terminés depuis plus d'une semaine)");
 
         return Command::SUCCESS;
     }

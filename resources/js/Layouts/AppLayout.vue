@@ -1,5 +1,6 @@
 <script setup>
 import { Link, usePage } from '@inertiajs/vue3';
+import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 const page = usePage();
@@ -175,7 +176,7 @@ onBeforeUnmount(() => {
             <div class="border-b border-white/10 px-6 py-6">
                 <Link :href="route('dashboard')" class="flex items-center gap-3">
                     <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/12 text-lg font-bold shadow-inner shadow-white/10">
-                        <img src="../Components/ApplicationLogo.vue"/>
+                        <ApplicationLogo class="h-8 w-8 object-contain" />
                     </div>
                     <div>
                         <p class="font-['Outfit'] text-xl font-bold tracking-wide">{{ appName }}</p>

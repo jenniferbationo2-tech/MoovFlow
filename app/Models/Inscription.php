@@ -178,6 +178,16 @@ class Inscription extends Model
     
     public function peutEtreRecommandee(): bool
     {
+        // Types sans présélection (CONF, FORMATION) : l'organisateur peut recommander depuis preinscrit
+        if (!$this->necessitePreselection()) {
+            return in_array($this->statut, [
+                self::STATUT_PREINSCRIT,
+                self::STATUT_DOSSIER_SOUMIS,
+                self::STATUT_EN_ANALYSE,
+            ]);
+        }
+
+        // Autres types : il faut que le dossier ait été soumis
         return in_array($this->statut, [
             self::STATUT_DOSSIER_SOUMIS,
             self::STATUT_EN_ANALYSE,

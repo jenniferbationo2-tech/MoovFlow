@@ -16,7 +16,7 @@ class VivierController extends Controller
     {
         $user = Auth::user();
         abort_unless(
-            $user && $user->hasAnyRole(['admin', 'responsable_dcirp']),
+            $user && $user->hasRole('responsable_dcirp'),
             403,
             'Accès réservé au staff Moov.'
         );
@@ -47,7 +47,7 @@ class VivierController extends Controller
             'horaires'       => $b->horaires,
             'disponibilites' => $b->disponibilites ?? null,
             'competences'    => $b->competences ?? null,
-            'statut'         => $b->statut ?? 'inscrit',
+            'statut'         => $b->statut ?? 'actif',
             'evenement_id'   => $b->evenement_id,
             'created_at'     => optional($b->created_at)?->toIso8601String(),
         ]);
@@ -81,7 +81,7 @@ class VivierController extends Controller
 
         Benevole::create(array_merge($validated, [
             'evenement_id' => null,
-            'statut'       => 'inscrit',
+            'statut'       => 'actif',
         ]));
 
         return back()->with('success', 'Bénévole ajouté au vivier.');

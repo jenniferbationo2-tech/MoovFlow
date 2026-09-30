@@ -27,22 +27,16 @@ defineProps({
     <Head title="Modifier un événement" />
 
     <DashboardLayout>
-        <template #header>
-            <div>
-                <h1 class="text-2xl font-bold text-slate-900">Modifier l'événement</h1>
-                <p class="mt-1 text-sm text-slate-500">Ajustez les contenus, le budget et les indicateurs de suivi.</p>
-            </div>
-        </template>
+        <div class="mb-6">
+            <h1 class="font-display text-2xl font-bold text-slate-900">Modifier l'événement</h1>
+            <p class="mt-1 text-sm text-slate-500">Ajustez les contenus, le budget et les indicateurs de suivi.</p>
+        </div>
 
         <EvenementForm
             :evenement="evenement"
             :types-evenement="typesEvenement"
             :lieux="lieux"
-            :statuts="statuts"
-            :submit-url="route('evenements.update', evenement.id)"
-            method="patch"
-            :cancel-url="route('evenements.show', evenement.id)"
-            submit-label="Sauvegarder"
+            :is-edit="true"
         />
     </DashboardLayout>
 </template>

@@ -15,6 +15,7 @@ class Benevole extends Model
         'nom', 'prenom',
         'telephone', 'email',
         'poste_affecte', 'creneaux_horaires',
+        'disponibilites', 'competences',
         'statut',
     ];
 

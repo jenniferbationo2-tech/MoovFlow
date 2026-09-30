@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\NotificationsAggregatorService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Tighten\Ziggy\Ziggy;
@@ -63,6 +64,13 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn() => $request->session()->get('success'),
                 'error' => fn() => $request->session()->get('error') ?? $request->session()->get('errors')?->first(),
             ],
+            'notifications' => function () use ($user) {
+                if (! $user || ! $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur'])) {
+                    return [];
+                }
+                $service = app(NotificationsAggregatorService::class);
+                return $service->getNotifications($user, $service->resolvePrimaryRole($user));
+            },
             'ziggy' => fn() => [
                 ...(new Ziggy)->toArray(),
                 'location' => $request->url(),

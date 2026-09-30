@@ -142,11 +142,11 @@ const couleurStatut = (statut) => ({
             <div class="flex gap-2">
                 <Link href="/analyses"
                       class="rounded-lg border-2 border-border-soft bg-white px-4 py-2.5 text-sm font-bold text-text-sub transition hover:bg-page-bg">
-                    ← Dashboard global
+                    ← Tableau global
                 </Link>
                 <button @click="exporterPdf"
                         class="rounded-lg bg-moov-noir px-4 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-moov-noir-soft">
-                    📄 Imprimer / Exporter PDF
+                     Imprimer / Exporter PDF
                 </button>
             </div>
         </div>
@@ -225,7 +225,7 @@ const couleurStatut = (statut) => ({
             <!-- ═══════════ SYNTHÈSE EXÉCUTIVE ═══════════ -->
             <div class="rounded-2xl bg-white p-6 shadow-card">
                 <h3 class="mb-4 font-display text-lg font-extrabold text-text-main">
-                    📊 Synthèse exécutive
+                     Synthèse exécutive
                 </h3>
 
                 <div class="grid grid-cols-2 gap-4 md:grid-cols-4">

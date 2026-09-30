@@ -45,7 +45,7 @@ const form = useForm({
     capacite_max:  props.evenement?.capacite_max ?? null,
 
     // ÉTAPE 3 : Budget & RSE
-    budget_previsionnel:  props.evenement?.budget_previsionnel ?? null,
+    budget_previsionnel:  props.evenement?.budget_prev ?? null,
     tarifs:               props.evenement?.tarifs ?? [],
     public_cible:         props.evenement?.public_cible ?? '',
     cible_beneficiaires:  props.evenement?.cible_beneficiaires ?? null,

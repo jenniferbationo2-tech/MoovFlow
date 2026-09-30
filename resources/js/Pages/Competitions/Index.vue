@@ -4,10 +4,11 @@ import { Link, useForm, router } from '@inertiajs/vue3'
 import DashboardLayout from '@/Layouts/DashboardLayout.vue'
 
 const props = defineProps({
-    evenement:   Object,
-    equipes:     Array,
-    phases:      Array,
-    classements: Object,
+    evenement:               Object,
+    equipes:                 Array,
+    phases:                  Array,
+    classements:             Object,
+    participantsDisponibles: { type: Array, default: () => [] },
 })
 
 // ── ONGLETS ──────────────────────────────
@@ -55,6 +56,33 @@ const creerEquipe = () => {
 const supprimerEquipe = (equipe) => {
     if (confirm(`Supprimer l'équipe "${equipe.nom}" ?`)) {
         router.delete(`/evenements/${props.evenement.id}/competition/equipes/${equipe.id}`)
+    }
+}
+
+// ── MEMBRES D'ÉQUIPE (à partir des participants inscrits) ──
+const equipeMembreOuverte = ref(null)
+const formMembre = useForm({
+    user_id: '',
+    role: 'membre',
+})
+
+const ouvrirAjoutMembre = (equipe) => {
+    formMembre.reset()
+    equipeMembreOuverte.value = equipe.id
+}
+
+const ajouterMembre = (equipe) => {
+    formMembre.post(`/evenements/${props.evenement.id}/competition/equipes/${equipe.id}/membres`, {
+        onSuccess: () => equipeMembreOuverte.value = null,
+        preserveScroll: true,
+    })
+}
+
+const retirerMembre = (equipe, membre) => {
+    if (confirm(`Retirer ${membre.user?.nom_complet ?? 'ce participant'} de l'équipe ?`)) {
+        router.delete(`/evenements/${props.evenement.id}/competition/equipes/${equipe.id}/membres/${membre.id}`, {
+            preserveScroll: true,
+        })
     }
 }
 
@@ -142,6 +170,61 @@ const couleurStatutRencontre = (statut) => ({
 }[statut] || { bg: 'bg-slate-100', text: 'text-slate-600', label: statut })
 
 const phasesActives = computed(() => props.phases ?? [])
+
+// ── GÉNÉRATION AUTOMATIQUE DE LA PHASE SUIVANTE ──
+const gagnantsPhase = (phase) => (phase.rencontres ?? []).map(r => r.vainqueur).filter(Boolean)
+
+const phaseComplete = (phase) =>
+    (phase.rencontres?.length ?? 0) > 0 && phase.rencontres.every(r => r.statut === 'terminee')
+
+const phaseAvecNul = (phase) =>
+    (phase.rencontres ?? []).some(r => r.statut === 'terminee' && !r.vainqueur)
+
+const pairesSuivantes = (phase) => {
+    const g = gagnantsPhase(phase)
+    const paires = []
+    for (let i = 0; i + 1 < g.length; i += 2) paires.push([g[i], g[i + 1]])
+    return paires
+}
+
+const equipeQualifieeSansAdversaire = (phase) => {
+    const g = gagnantsPhase(phase)
+    return g.length % 2 === 1 ? g[g.length - 1] : null
+}
+
+const suggererNomPhase = (nbPaires) => {
+    const nbEquipes = nbPaires * 2
+    if (nbEquipes === 2) return 'Finale'
+    if (nbEquipes === 4) return 'Demi-finales'
+    if (nbEquipes === 8) return 'Quarts de finale'
+    if (nbEquipes === 16) return 'Huitièmes de finale'
+    return 'Phase suivante'
+}
+
+const modalGenerationOuvert = ref(false)
+const phaseGeneration = ref(null)
+const pairesGeneration = ref([])
+const formGeneration = useForm({
+    nom: '',
+    dates: [],
+    lieu_match: '',
+})
+
+const ouvrirModalGeneration = (phase) => {
+    phaseGeneration.value = phase
+    pairesGeneration.value = pairesSuivantes(phase)
+    formGeneration.reset()
+    formGeneration.nom = suggererNomPhase(pairesGeneration.value.length)
+    formGeneration.dates = pairesGeneration.value.map(() => '')
+    modalGenerationOuvert.value = true
+}
+
+const genererPhaseSuivante = () => {
+    formGeneration.post(`/evenements/${props.evenement.id}/competition/phases/${phaseGeneration.value.id}/generer-suivante`, {
+        onSuccess: () => modalGenerationOuvert.value = false,
+        preserveScroll: true,
+    })
+}
 </script>
 
 <template>
@@ -249,6 +332,63 @@ const phasesActives = computed(() => props.phases ?? [])
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/>
                             </svg>
                         </button>
+                    </div>
+
+                    <!-- Membres de l'équipe (participants inscrits) -->
+                    <div class="mt-4 border-t border-border-soft pt-3">
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs font-bold uppercase tracking-wider text-text-muted">
+                                Membres ({{ eq.membres?.length ?? 0 }})
+                            </p>
+                            <button v-if="equipeMembreOuverte !== eq.id" @click="ouvrirAjoutMembre(eq)"
+                                    :disabled="!participantsDisponibles?.length"
+                                    class="text-xs font-bold text-moov-blue hover:underline disabled:cursor-not-allowed disabled:text-text-muted disabled:no-underline">
+                                + Ajouter
+                            </button>
+                        </div>
+
+                        <ul v-if="eq.membres?.length" class="mt-2 space-y-1.5">
+                            <li v-for="m in eq.membres" :key="m.id"
+                                class="flex items-center justify-between gap-2 text-sm">
+                                <span class="min-w-0 truncate text-text-main">
+                                    {{ m.user?.nom_complet ?? '—' }}
+                                    <span v-if="m.role === 'capitaine'"
+                                          class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                                        Capitaine
+                                    </span>
+                                </span>
+                                <button @click="retirerMembre(eq, m)"
+                                        class="shrink-0 text-text-muted transition hover:text-red-600" title="Retirer">
+                                    ✕
+                                </button>
+                            </li>
+                        </ul>
+                        <p v-else class="mt-2 text-xs text-text-sub">Aucun membre inscrit dans cette équipe.</p>
+
+                        <form v-if="equipeMembreOuverte === eq.id" @submit.prevent="ajouterMembre(eq)"
+                              class="mt-3 space-y-2 rounded-lg bg-page-bg/50 p-3">
+                            <select v-model="formMembre.user_id" required
+                                    class="w-full rounded-lg border border-border-soft px-2 py-1.5 text-sm outline-none focus:border-moov-blue">
+                                <option value="">Sélectionner un participant inscrit</option>
+                                <option v-for="p in participantsDisponibles" :key="p.id" :value="p.id">{{ p.nom_complet }}</option>
+                            </select>
+                            <p v-if="formMembre.errors.user_id" class="text-xs text-red-600">{{ formMembre.errors.user_id }}</p>
+                            <select v-model="formMembre.role"
+                                    class="w-full rounded-lg border border-border-soft px-2 py-1.5 text-sm outline-none focus:border-moov-blue">
+                                <option value="membre">Membre</option>
+                                <option value="capitaine">Capitaine</option>
+                            </select>
+                            <div class="flex justify-end gap-2">
+                                <button type="button" @click="equipeMembreOuverte = null"
+                                        class="text-xs font-bold text-text-sub hover:text-text-main">
+                                    Annuler
+                                </button>
+                                <button type="submit" :disabled="formMembre.processing"
+                                        class="rounded-lg bg-moov-blue px-3 py-1.5 text-xs font-bold text-white transition hover:bg-moov-blue-dark disabled:opacity-50">
+                                    Ajouter
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -371,6 +511,23 @@ const phasesActives = computed(() => props.phases ?? [])
                     <!-- Pas de rencontres -->
                     <div v-else class="p-8 text-center">
                         <p class="text-sm text-text-sub">Aucune rencontre planifiée pour cette phase</p>
+                    </div>
+
+                    <!-- Génération de la phase suivante -->
+                    <div v-if="phaseComplete(phase)" class="border-t border-border-soft p-4">
+                        <p v-if="phaseAvecNul(phase)"
+                           class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+                            ⚠ Certains matchs sont terminés sur un score nul. Départagez-les (prolongations / tirs au but) avant de générer la phase suivante.
+                        </p>
+                        <p v-else-if="pairesSuivantes(phase).length === 0"
+                           class="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-bold text-emerald-700">
+                            🏆 {{ gagnantsPhase(phase)[0]?.nom }} remporte la compétition !
+                        </p>
+                        <button v-else @click="ouvrirModalGeneration(phase)"
+                                class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-emerald-700">
+                            🏆 Générer la phase suivante
+                            ({{ pairesSuivantes(phase).length }} rencontre{{ pairesSuivantes(phase).length > 1 ? 's' : '' }})
+                        </button>
                     </div>
                 </div>
             </div>
@@ -640,6 +797,67 @@ const phasesActives = computed(() => props.phases ?? [])
                     <button @click="enregistrerScore" :disabled="formScore.processing"
                             class="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50">
                         Enregistrer
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modale GÉNÉRATION DE LA PHASE SUIVANTE -->
+        <div v-if="modalGenerationOuvert"
+             class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
+             @click.self="modalGenerationOuvert = false">
+            <div class="w-full max-w-lg rounded-xl bg-card shadow-2xl">
+                <div class="border-b border-border-soft p-5">
+                    <h3 class="font-display text-lg font-extrabold text-text-main">Générer la phase suivante</h3>
+                    <p class="mt-1 text-sm text-text-sub">
+                        À partir des vainqueurs de : <span class="font-bold">{{ phaseGeneration?.nom }}</span>
+                    </p>
+                </div>
+                <form @submit.prevent="genererPhaseSuivante" class="space-y-4 p-5">
+                    <div>
+                        <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Nom de la nouvelle phase *</label>
+                        <input v-model="formGeneration.nom" type="text" required
+                               class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                        <p v-if="formGeneration.errors.nom" class="mt-1 text-xs text-red-600">{{ formGeneration.errors.nom }}</p>
+                    </div>
+
+                    <div class="space-y-3">
+                        <p class="text-xs font-bold uppercase tracking-wider text-text-sub">Rencontres à planifier</p>
+                        <div v-for="(paire, i) in pairesGeneration" :key="i"
+                             class="rounded-lg border border-border-soft p-3">
+                            <p class="text-sm font-bold text-text-main">
+                                {{ paire[0]?.nom }} <span class="text-text-muted">vs</span> {{ paire[1]?.nom }}
+                            </p>
+                            <input v-model="formGeneration.dates[i]" type="datetime-local" required
+                                   class="mt-2 w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                        </div>
+                        <p v-if="formGeneration.errors.dates" class="text-xs text-red-600">{{ formGeneration.errors.dates }}</p>
+                    </div>
+
+                    <p v-if="equipeQualifieeSansAdversaire(phaseGeneration)"
+                       class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+                        ⚠ {{ equipeQualifieeSansAdversaire(phaseGeneration).nom }} est qualifiée directement (nombre impair d'équipes) — sa rencontre suivante devra être créée manuellement le moment venu.
+                    </p>
+
+                    <div>
+                        <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">Lieu (optionnel, appliqué à toutes les rencontres)</label>
+                        <input v-model="formGeneration.lieu_match" type="text"
+                               placeholder="Stade municipal, Terrain A..."
+                               class="w-full rounded-lg border border-border-soft px-3 py-2 text-sm outline-none focus:border-moov-blue focus:ring-2 focus:ring-moov-blue/10"/>
+                    </div>
+
+                    <p v-if="formGeneration.errors.generation" class="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                        {{ formGeneration.errors.generation }}
+                    </p>
+                </form>
+                <div class="flex justify-end gap-2 border-t border-border-soft bg-page-bg/50 p-4">
+                    <button @click="modalGenerationOuvert = false"
+                            class="rounded-lg border border-border-soft bg-white px-5 py-2 text-sm font-bold text-text-sub transition hover:bg-page-bg">
+                        Annuler
+                    </button>
+                    <button @click="genererPhaseSuivante" :disabled="formGeneration.processing"
+                            class="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50">
+                        Générer
                     </button>
                 </div>
             </div>

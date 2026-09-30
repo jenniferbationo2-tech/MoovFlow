@@ -14,6 +14,8 @@ class Equipe extends Model
     protected $fillable = [
         'evenement_id',
         'nom',
+        'capitaine',
+        'categorie',
         'type',
         'score',
     ];

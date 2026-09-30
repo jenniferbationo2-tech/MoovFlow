@@ -244,7 +244,7 @@ class LogistiqueController extends Controller
     {
         $user = Auth::user();
         abort_unless(
-            $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']),
+            $user && $user->hasAnyRole(['responsable_dcirp', 'organisateur']),
             403, 'Accès réservé au staff.'
         );
     }
@@ -253,8 +253,8 @@ class LogistiqueController extends Controller
     {
         $user = Auth::user();
 
-        // Admin & Responsable : tout pouvoir
-        if ($user->hasAnyRole(['admin', 'responsable_dcirp'])) {
+        // Responsable dCIRP : tout pouvoir
+        if ($user->hasRole('responsable_dcirp')) {
             return;
         }
 
@@ -269,7 +269,7 @@ class LogistiqueController extends Controller
     private function getPermissions(Evenement $evenement): array
     {
         $user = Auth::user();
-        $estResponsable = $user?->hasAnyRole(['admin', 'responsable_dcirp']) ?? false;
+        $estResponsable = $user?->hasRole('responsable_dcirp') ?? false;
         $estProprio = $user?->hasRole('organisateur') && $evenement->created_by === $user?->id;
 
         return [

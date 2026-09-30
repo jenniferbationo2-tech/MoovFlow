@@ -183,7 +183,7 @@ class SatisfactionController extends Controller
         $user = Auth::user();
 
         abort_unless(
-            $user->hasAnyRole(['admin', 'responsable_dcirp']) ||
+            $user->hasRole('responsable_dcirp') ||
                 ($user->hasRole('organisateur') && $evenement->created_by === $user->id),
             403,
             'Vous n\'avez pas accès à cette analyse.'

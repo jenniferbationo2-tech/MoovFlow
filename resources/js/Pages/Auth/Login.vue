@@ -42,8 +42,12 @@ const submit = () => {
 
             <div class="w-full max-w-md">
 
-                <!-- CARD BLANCHE -->
-                <div class="overflow-hidden rounded-3xl bg-white shadow-2xl">
+                <!-- CADRE À BORDURE ANIMÉE -->
+                <div class="relative overflow-hidden rounded-3xl p-[3px] shadow-2xl">
+                    <div class="absolute inset-[-60%] animate-border-spin bg-[conic-gradient(from_0deg,#FF8000,#1B4A8B,#FF8000)]"/>
+
+                    <!-- CARD BLANCHE -->
+                    <div class="relative overflow-hidden rounded-3xl bg-white">
 
                     <!-- En-tête de la card : Logo -->
                     <div class="flex flex-col items-center border-b border-slate-100 px-8 pt-8 pb-6">
@@ -192,6 +196,7 @@ const submit = () => {
                             </Link>
                         </p>
 
+                    </div>
                     </div>
                 </div>
 

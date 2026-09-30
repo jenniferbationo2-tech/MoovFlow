@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import { router } from '@inertiajs/vue3'
+import { router, Link } from '@inertiajs/vue3'
 import DashboardLayout from '@/Layouts/DashboardLayout.vue'
 import ModalSelectionType from './Partials/ModalSelectionType.vue'
 import EvenementWizard from './Partials/EvenementWizard.vue'
@@ -56,10 +56,10 @@ const changerType = () => {
                     </h1>
                 </div>
 
-                <a href="/evenements"
+                <Link href="/evenements"
                    class="text-sm font-bold text-text-sub transition hover:text-moov-blue">
                     ← Retour à la liste
-                </a>
+                </Link>
             </div>
 
            <EvenementWizard :type-selectionne="typeSelectionne"

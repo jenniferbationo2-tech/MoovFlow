@@ -173,7 +173,7 @@ class PrestataireController extends Controller
     {
         $user = Auth::user();
         abort_unless(
-            $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']),
+            $user && $user->hasAnyRole(['responsable_dcirp', 'organisateur']),
             403,
             'Accès réservé au staff.'
         );
@@ -183,7 +183,7 @@ class PrestataireController extends Controller
     {
         $user = Auth::user();
         abort_unless(
-            $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']),
+            $user && $user->hasAnyRole(['responsable_dcirp', 'organisateur']),
             403,
             'Vous n\'êtes pas autorisé à modifier l\'annuaire.'
         );
@@ -193,7 +193,7 @@ class PrestataireController extends Controller
     {
         $user = Auth::user();
         abort_unless(
-            $user && $user->hasAnyRole(['admin', 'responsable_dcirp']),
+            $user && $user->hasRole('responsable_dcirp'),
             403,
             'Seul le responsable dCIRP peut supprimer un prestataire.'
         );
@@ -203,9 +203,9 @@ class PrestataireController extends Controller
     {
         $user = Auth::user();
         return [
-            'peut_creer'     => $user?->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']) ?? false,
-            'peut_modifier'  => $user?->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']) ?? false,
-            'peut_supprimer' => $user?->hasAnyRole(['admin', 'responsable_dcirp']) ?? false,
+            'peut_creer'     => $user?->hasAnyRole(['responsable_dcirp', 'organisateur']) ?? false,
+            'peut_modifier'  => $user?->hasAnyRole(['responsable_dcirp', 'organisateur']) ?? false,
+            'peut_supprimer' => $user?->hasRole('responsable_dcirp') ?? false,
         ];
     }
 }

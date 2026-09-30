@@ -1,11 +1,20 @@
 <script setup>
-defineProps({
+import { computed } from 'vue'
+
+const props = defineProps({
     form:    { type: Object, required: true },
     lieux:   { type: Array, required: true },
     erreurs: { type: Array, default: () => [] },
 })
 
 defineEmits(['precedent', 'suivant'])
+
+// Date minimale = aujourd'hui (pour l'attribut min des inputs)
+const todayDatetime = computed(() => {
+    const now = new Date()
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
+    return now.toISOString().slice(0, 16)
+})
 </script>
 
 <template>
@@ -39,13 +48,16 @@ defineEmits(['precedent', 'suivant'])
                         Date de début *
                     </label>
                     <input v-model="form.date_debut" type="datetime-local" required
+                           :min="todayDatetime"
                            class="w-full rounded-lg border-2 border-border-soft bg-white px-4 py-3 text-sm font-medium outline-none transition focus:border-moov-blue"/>
+                    <p class="mt-1 text-xs text-text-muted">La date de début ne peut pas être dans le passé</p>
                 </div>
                 <div>
                     <label class="mb-2 block text-xs font-bold uppercase tracking-wider text-text-sub">
                         Date de fin *
                     </label>
                     <input v-model="form.date_fin" type="datetime-local" required
+                           :min="form.date_debut || todayDatetime"
                            class="w-full rounded-lg border-2 border-border-soft bg-white px-4 py-3 text-sm font-medium outline-none transition focus:border-moov-blue"/>
                 </div>
             </div>

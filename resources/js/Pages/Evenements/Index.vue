@@ -31,7 +31,7 @@ const userRoles = computed(() => {
 })
 
 const estStaff = computed(() =>
-    userRoles.value.some(r => ['admin', 'responsable_dcirp', 'organisateur'].includes(r))
+    userRoles.value.some(r => ['responsable_dcirp', 'organisateur'].includes(r))
 )
 
 // ═══ PERMISSIONS PRÉCISES PAR RÔLE ═══
@@ -193,6 +193,7 @@ const couleurStatut = (statut) => ({
     publie: { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Publié' },
     en_cours: { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500', label: 'En cours' },
     termine: { bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400', label: 'Terminé' },
+    archive: { bg: 'bg-indigo-50', text: 'text-indigo-700', dot: 'bg-indigo-400', label: 'Archivé' },
     brouillon: { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-500', label: 'Brouillon' },
     annule: { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-500', label: 'Annulé' },
 }[statut] || { bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400', label: statut })
@@ -201,6 +202,7 @@ const dateNow = computed(() => new Date(props.now))
 
 const statutDynamique = (ev) => {
     if (ev.statut === 'annule') return 'annule'
+    if (ev.statut === 'archive') return 'archive'
     if (ev.statut === 'brouillon' || ev.statut === 'en_validation') return ev.statut
 
     const debut = ev.date_debut ? new Date(ev.date_debut) : null
@@ -218,6 +220,7 @@ const couleurStatutDyn = (statutDyn) => ({
     a_venir:   { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'À venir' },
     en_cours:  { bg: 'bg-blue-50',    text: 'text-blue-700',    dot: 'bg-blue-500',    label: 'En cours' },
     termine:   { bg: 'bg-slate-100',  text: 'text-slate-600',   dot: 'bg-slate-400',   label: 'Terminé' },
+    archive:   { bg: 'bg-indigo-50',  text: 'text-indigo-700',  dot: 'bg-indigo-400',  label: 'Archivé' },
     annule:    { bg: 'bg-red-50',     text: 'text-red-700',     dot: 'bg-red-500',     label: 'Annulé' },
     brouillon: { bg: 'bg-amber-50',   text: 'text-amber-700',   dot: 'bg-amber-500',   label: 'Brouillon' },
 }[statutDyn] || { bg: 'bg-slate-100', text: 'text-slate-700', dot: 'bg-slate-400', label: statutDyn })
@@ -226,6 +229,9 @@ const couleurStatutDyn = (statutDyn) => ({
 const actionEvenement = (ev) => {
     const sd = statutDynamique(ev)
 
+    if (ev.deja_inscrit && (sd === 'a_venir' || sd === 'publie')) {
+        return { label: 'Déjà inscrit ✓', href: null, style: 'disabled' }
+    }
     if (sd === 'a_venir' && peutSInscrire.value && ev.type_evenement?.code !== 'SALON') {
         return { label: "S'inscrire →", href: lienInscription(ev), style: 'primary' }
     }
@@ -273,8 +279,12 @@ const formaterMoisJour = (d) => {
 }
 
 const lienInscription = (ev) => {
-    if (!user.value) return '/login'
-    return `/evenements/${ev.id}/inscrire`
+    const urlPreinscription = `/evenements/${ev.id}/preinscrire`
+    if (!user.value) {
+        // Mémorise la page de préinscription visée pour y revenir juste après connexion
+        return `/login?redirect=${encodeURIComponent(urlPreinscription)}`
+    }
+    return urlPreinscription
 }
 
 const modalConfirm = ref({
@@ -320,6 +330,28 @@ const publierEvenement = (id) => {
         action: () => router.post(`/evenements/${id}/valider`, {}, { preserveScroll: true })
     })
 }
+
+// ── Groupement des événements par type (vue staff) ──
+const ordreTypes = ['BARA_MOUSSO', 'CONF', 'FORMATION', 'HACK', 'CHALLENGE', 'SPORT', 'SALON']
+
+const evenementsParType = computed(() => {
+    const groupes = {}
+    // Initialiser dans l'ordre souhaité
+    ordreTypes.forEach(code => {
+        groupes[code] = { label: couleurType(code).label, events: [] }
+    })
+    // Répartir les événements
+    evenementsAffiches.value.forEach(ev => {
+        const code = ev.type_evenement?.code ?? 'AUTRE'
+        if (!groupes[code]) groupes[code] = { label: couleurType(code).label, events: [] }
+        groupes[code].events.push(ev)
+    })
+    // Trier chaque groupe par date de début
+    Object.values(groupes).forEach(g => {
+        g.events.sort((a, b) => new Date(a.date_debut) - new Date(b.date_debut))
+    })
+    return groupes
+})
 </script>
 
 <template>
@@ -346,196 +378,184 @@ const publierEvenement = (id) => {
                 </span>
             </div>
 
-            <!-- KPIs -->
-            <div class="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-                <div class="rounded-xl bg-card p-4 shadow-card">
-                    <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Total</p>
-                    <p class="mt-2 font-display text-2xl font-extrabold text-moov-blue">
-                        {{ evenements?.total ?? evenementsAffiches.length }}
+            <!-- KPIs (cliquables → filtrent la liste) -->
+            <div class="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
+                <button type="button" @click="filtreStatut = ''; filtrer()"
+                    :class="['rounded-xl p-4 text-left shadow-card transition hover:shadow-card-hover',
+                        !filtreStatut ? 'bg-moov-noir ring-2 ring-moov-noir' : 'bg-card']">
+                    <p :class="['text-xs font-bold uppercase tracking-wider', !filtreStatut ? 'text-white/60' : 'text-text-muted']">Total</p>
+                    <p :class="['mt-2 font-display text-2xl font-extrabold', !filtreStatut ? 'text-white' : 'text-moov-blue']">
+                        {{ kpis.total ?? 0 }}
                     </p>
-                </div>
-                <div class="rounded-xl bg-card p-4 shadow-card">
-                    <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Publiés</p>
-                    <p class="mt-2 font-display text-2xl font-extrabold text-emerald-600">
-                        {{evenementsAffiches.filter(e => e.statut === 'publie').length}}
+                </button>
+                <button type="button" @click="filtreStatut = 'publie'; filtrer()"
+                    :class="['rounded-xl p-4 text-left shadow-card transition hover:shadow-card-hover',
+                        filtreStatut === 'publie' ? 'bg-emerald-600 ring-2 ring-emerald-600' : 'bg-card']">
+                    <p :class="['text-xs font-bold uppercase tracking-wider', filtreStatut === 'publie' ? 'text-white/70' : 'text-text-muted']">Publiés</p>
+                    <p :class="['mt-2 font-display text-2xl font-extrabold', filtreStatut === 'publie' ? 'text-white' : 'text-emerald-600']">
+                        {{ kpis.publie ?? 0 }}
                     </p>
-                </div>
-                <div class="rounded-xl bg-card p-4 shadow-card">
-                    <p class="text-xs font-bold uppercase tracking-wider text-text-muted">En cours</p>
-                    <p class="mt-2 font-display text-2xl font-extrabold text-blue-600">
-                        {{evenementsAffiches.filter(e => e.statut === 'en_cours').length}}
+                </button>
+                <button type="button" @click="filtreStatut = 'en_cours'; filtrer()"
+                    :class="['rounded-xl p-4 text-left shadow-card transition hover:shadow-card-hover',
+                        filtreStatut === 'en_cours' ? 'bg-blue-600 ring-2 ring-blue-600' : 'bg-card']">
+                    <p :class="['text-xs font-bold uppercase tracking-wider', filtreStatut === 'en_cours' ? 'text-white/70' : 'text-text-muted']">En cours</p>
+                    <p :class="['mt-2 font-display text-2xl font-extrabold', filtreStatut === 'en_cours' ? 'text-white' : 'text-blue-600']">
+                        {{ kpis.en_cours ?? 0 }}
                     </p>
-                </div>
-                <div class="rounded-xl bg-card p-4 shadow-card">
-                    <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Brouillons</p>
-                    <p class="mt-2 font-display text-2xl font-extrabold text-amber-600">
-                        {{evenementsAffiches.filter(e => e.statut === 'brouillon').length}}
+                </button>
+                <button type="button" @click="filtreStatut = 'brouillon'; filtrer()"
+                    :class="['rounded-xl p-4 text-left shadow-card transition hover:shadow-card-hover',
+                        filtreStatut === 'brouillon' ? 'bg-amber-500 ring-2 ring-amber-500' : 'bg-card']">
+                    <p :class="['text-xs font-bold uppercase tracking-wider', filtreStatut === 'brouillon' ? 'text-white/70' : 'text-text-muted']">Brouillons</p>
+                    <p :class="['mt-2 font-display text-2xl font-extrabold', filtreStatut === 'brouillon' ? 'text-white' : 'text-amber-600']">
+                        {{ kpis.brouillon ?? 0 }}
                     </p>
-                </div>
+                </button>
+                <button type="button" @click="filtreStatut = 'archive'; filtrer()"
+                    :class="['rounded-xl p-4 text-left shadow-card transition hover:shadow-card-hover',
+                        filtreStatut === 'archive' ? 'bg-indigo-600 ring-2 ring-indigo-600' : 'bg-card']">
+                    <p :class="['text-xs font-bold uppercase tracking-wider', filtreStatut === 'archive' ? 'text-white/70' : 'text-text-muted']">Archivés</p>
+                    <p :class="['mt-2 font-display text-2xl font-extrabold', filtreStatut === 'archive' ? 'text-white' : 'text-indigo-600']">
+                        {{ kpis.archive ?? 0 }}
+                    </p>
+                </button>
             </div>
 
-            <!-- Tableau -->
-            <div class="overflow-hidden rounded-xl bg-card shadow-card">
-                <div class="border-b border-border-soft p-4">
-                    <div class="flex flex-wrap items-center gap-3">
-                        <h2 class="text-sm font-bold text-text-main">Événements en cours & à venir</h2>
-                        <div class="ml-auto flex flex-wrap items-center gap-2">
-                            <select v-model="filtreTypeId" @change="filtrer"
-                                class="rounded-lg border border-border-soft px-3 py-1.5 text-xs font-semibold text-text-main outline-none focus:border-moov-blue">
-                                <option value="">Tous les types</option>
-                                <option v-for="t in typesDisponibles" :key="t.code" :value="t.code">
-                                    {{ t.nom }}
-                                </option>
-                            </select>
-                            <select v-model="filtreStatut" @change="filtrer"
-                                class="rounded-lg border border-border-soft px-3 py-1.5 text-xs font-semibold text-text-main outline-none focus:border-moov-blue">
-                                <option value="">Tous les statuts</option>
-                                <option v-for="s in statuts" :key="s.value" :value="s.value">
-                                    {{ s.label }}
-                                </option>
-                            </select>
-                            <input v-model="recherche" @keyup.enter="filtrer" type="search" placeholder="Filtrer..."
-                                class="w-48 rounded-lg border border-border-soft px-3 py-1.5 text-xs outline-none focus:border-moov-blue" />
+            <!-- Filtres -->
+            <div class="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-border-soft bg-white p-3 shadow-sm">
+                <select v-model="filtreTypeId" @change="filtrer"
+                    class="rounded-lg border border-border-soft px-3 py-2 text-xs font-semibold text-text-main outline-none focus:border-moov-blue">
+                    <option value="">Tous les types</option>
+                    <option v-for="t in typesDisponibles" :key="t.code" :value="t.code">{{ t.nom }}</option>
+                </select>
+                <select v-model="filtreStatut" @change="filtrer"
+                    class="rounded-lg border border-border-soft px-3 py-2 text-xs font-semibold text-text-main outline-none focus:border-moov-blue">
+                    <option value="">Tous les statuts</option>
+                    <option v-for="s in statuts" :key="s.value" :value="s.value">{{ s.label }}</option>
+                </select>
+                <input v-model="recherche" @keyup.enter="filtrer" type="search" placeholder="Rechercher un événement..."
+                    class="flex-1 min-w-40 rounded-lg border border-border-soft px-3 py-2 text-xs outline-none focus:border-moov-blue" />
+                <button v-if="filtreTypeId || filtreStatut || recherche" @click="filtreTypeId=''; filtreStatut=''; recherche=''; filtrer()"
+                    class="rounded-lg border border-border-soft bg-white px-3 py-2 text-xs font-bold text-text-sub transition hover:bg-page-bg">
+                    Réinitialiser
+                </button>
+            </div>
+
+            <!-- Tableau groupé par type -->
+            <div class="space-y-6">
+                <template v-for="(groupe, typeCode) in evenementsParType" :key="typeCode">
+                    <div v-if="groupe.events.length" class="overflow-hidden rounded-2xl border border-border-soft bg-white shadow-sm">
+                        <!-- En-tête du groupe -->
+                        <div class="flex items-center justify-between border-b border-border-soft bg-slate-50 px-5 py-3">
+                            <div class="flex items-center gap-2">
+                                <span :class="['rounded-lg px-2.5 py-1 text-xs font-bold uppercase tracking-wider',
+                                    couleurType(typeCode).bg, couleurType(typeCode).text]">
+                                    {{ couleurType(typeCode).label }}
+                                </span>
+                                <span class="text-xs text-text-muted font-medium">
+                                    {{ groupe.events.length }} événement{{ groupe.events.length > 1 ? 's' : '' }}
+                                </span>
+                            </div>
+                            <div class="flex gap-3 text-xs text-text-muted">
+                                <span>{{ groupe.events.filter(e => e.statut === 'publie').length }} publiés</span>
+                                <span v-if="groupe.events.filter(e => e.statut === 'en_validation').length > 0"
+                                    class="font-bold text-amber-600">
+                                    {{ groupe.events.filter(e => e.statut === 'en_validation').length }} à valider
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Lignes d'événements -->
+                        <div class="divide-y divide-border-soft">
+                            <div v-for="ev in groupe.events" :key="ev.id"
+                                class="flex flex-wrap items-center gap-3 px-5 py-4 transition hover:bg-slate-50/60">
+
+                                <!-- Titre & réf -->
+                                <div class="min-w-0 flex-1">
+                                    <Link :href="`/evenements/${ev.id}`"
+                                        class="font-semibold text-text-main hover:text-moov-blue transition truncate block">
+                                        {{ ev.titre }}
+                                    </Link>
+                                    <p class="mt-0.5 text-xs text-text-muted">
+                                        EV-{{ String(ev.id).padStart(4, '0') }}
+                                        <span v-if="ev.lieu?.nom"> · {{ ev.lieu.nom }}</span>
+                                    </p>
+                                </div>
+
+                                <!-- Date -->
+                                <div class="hidden w-32 shrink-0 text-sm text-text-sub sm:block">
+                                    {{ formaterDate(ev.date_debut) }}
+                                </div>
+
+                                <!-- Statut -->
+                                <div class="shrink-0">
+                                    <span :class="['inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold',
+                                        couleurStatut(ev.statut).bg, couleurStatut(ev.statut).text]">
+                                        <span :class="['h-1.5 w-1.5 rounded-full', couleurStatut(ev.statut).dot]" />
+                                        {{ couleurStatut(ev.statut).label }}
+                                    </span>
+                                </div>
+
+                                <!-- Inscrits -->
+                                <div class="hidden shrink-0 w-16 text-center sm:block">
+                                    <span class="text-sm font-bold text-text-main">{{ ev.inscriptions_count ?? 0 }}</span>
+                                    <p class="text-[10px] text-text-muted">inscrits</p>
+                                </div>
+
+                                <!-- Actions -->
+                                <div class="flex shrink-0 items-center gap-1">
+                                    <Link :href="`/evenements/${ev.id}`"
+                                        class="rounded-lg p-2 text-text-sub transition hover:bg-blue-50 hover:text-moov-blue"
+                                        title="Voir">
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                        </svg>
+                                    </Link>
+                                    <Link v-if="peutModifierEvent(ev)" :href="`/evenements/${ev.id}/edit`"
+                                        class="rounded-lg p-2 text-text-sub transition hover:bg-amber-50 hover:text-amber-600"
+                                        title="Modifier">
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                        </svg>
+                                    </Link>
+                                    <button v-if="peutPublierEvent(ev)" @click="publierEvenement(ev.id)"
+                                        class="rounded-lg p-2 text-text-sub transition hover:bg-emerald-50 hover:text-emerald-600"
+                                        title="Valider et publier">
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                                        </svg>
+                                    </button>
+                                    <button v-if="peutSupprimerEvent(ev)" @click="supprimerEvenement(ev.id)"
+                                        class="rounded-lg p-2 text-text-sub transition hover:bg-red-50 hover:text-red-600"
+                                        title="Archiver">
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 3h6a1 1 0 011 1v3H8V4a1 1 0 011-1z"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </template>
 
-               <table class="min-w-full divide-y divide-border-soft text-sm">
-                    <thead class="bg-page-bg/50">
-                        <tr>
-                            <th class="px-5 py-3 text-left text-xs font-bold uppercase tracking-wider text-text-sub">
-                                Événement
-                            </th>
-                            <th class="px-5 py-3 text-left text-xs font-bold uppercase tracking-wider text-text-sub">
-                                Type
-                            </th>
-                            <th class="px-5 py-3 text-left text-xs font-bold uppercase tracking-wider text-text-sub">
-                                Lieu
-                            </th>
-                            <th class="px-5 py-3 text-left text-xs font-bold uppercase tracking-wider text-text-sub">
-                                Date
-                            </th>
-                            <th class="px-5 py-3 text-left text-xs font-bold uppercase tracking-wider text-text-sub">
-                                Statut
-                            </th>
-                            <th class="px-5 py-3 text-left text-xs font-bold uppercase tracking-wider text-text-sub">
-                                Inscrits
-                            </th>
-                            <th class="px-5 py-3 text-right text-xs font-bold uppercase tracking-wider text-text-sub">
-                                Actions
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-border-soft bg-card">
-                        <tr v-for="ev in evenementsAffiches" :key="ev.id" class="transition hover:bg-page-bg/50">
-
-                            <!-- COLONNE : Événement -->
-                            <td class="px-5 py-4">
-                                <div class="flex items-center gap-3">
-                                    <div :class="['h-10 w-1 rounded-full', couleurType(ev.type_evenement?.code).accent]" />
-                                    <div class="min-w-0">
-                                        <p class="truncate font-bold text-text-main">{{ ev.titre }}</p>
-                                        <p class="text-xs text-text-muted">Réf: EV-{{ String(ev.id).padStart(4, '0') }}</p>
-                                    </div>
-                                </div>
-                            </td>
-
-                            <!-- COLONNE : Type -->
-                            <td class="px-5 py-4">
-                                <span :class="['rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider',
-                                    couleurType(ev.type_evenement?.code).bg,
-                                    couleurType(ev.type_evenement?.code).text]">
-                                    {{ ev.type_evenement?.nom ?? '—' }}
-                                </span>
-                            </td>
-
-                            <!-- COLONNE : Lieu -->
-                            <td class="px-5 py-4 text-text-sub">{{ ev.lieu?.nom ?? '—' }}</td>
-
-                            <!-- COLONNE : Date -->
-                            <td class="px-5 py-4 text-text-sub">{{ formaterDate(ev.date_debut) }}</td>
-
-                            <!-- COLONNE : Statut -->
-                            <td class="px-5 py-4">
-                                <span :class="['inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold',
-                                    couleurStatut(ev.statut).bg, couleurStatut(ev.statut).text]">
-                                    <span :class="['h-1.5 w-1.5 rounded-full', couleurStatut(ev.statut).dot]" />
-                                    {{ couleurStatut(ev.statut).label }}
-                                </span>
-                            </td>
-
-                           
-                            <td class="px-5 py-4">
-                                <span class="font-bold text-text-main">{{ ev.inscriptions_count ?? 0 }}</span>
-                            </td>
-
-                            <td class="px-5 py-4">
-                                <div class="flex items-center justify-end gap-1">
-
-
-                                    <Link :href="`/evenements/${ev.id}`"
-                                        class="rounded p-1.5 text-text-sub transition hover:bg-moov-blue-50 hover:text-moov-blue"
-                                        title="Voir">
-                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                        </svg>
-                                    </Link>
-
-                                    <Link v-if="peutModifierEvent(ev)" :href="`/evenements/${ev.id}/edit`"
-                                        class="rounded p-1.5 text-text-sub transition hover:bg-amber-50 hover:text-amber-600"
-                                        title="Modifier">
-                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                        </svg>
-                                    </Link>
-
-                        
-                                    <button v-if="peutPublierEvent(ev)" @click="publierEvenement(ev.id)"
-                                        class="rounded p-1.5 text-text-sub transition hover:bg-emerald-50 hover:text-emerald-600"
-                                        title="Valider et publier">
-                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M5 13l4 4L19 7" />
-                                        </svg>
-                                    </button>
-
-                                    <!-- ARCHIVER : créateur seulement (PAS admin pur) -->
-                                    <button v-if="peutSupprimerEvent(ev)" @click="supprimerEvenement(ev.id)"
-                                        class="rounded p-1.5 text-text-sub transition hover:bg-red-50 hover:text-red-600"
-                                        title="Archiver">
-                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 3h6a1 1 0 011 1v3H8V4a1 1 0 011-1z" />
-                                        </svg>
-                                    </button>
-
-                                    
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-
-               <div v-if="!evenementsAffiches.length" class="px-6 py-12 text-center">
-                    <p class="font-bold text-text-main">Aucun événement trouvé</p>
+                <div v-if="!evenementsAffiches.length" class="rounded-2xl border-2 border-dashed border-border-soft bg-white py-16 text-center">
+                    <svg class="mx-auto h-12 w-12 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                    </svg>
+                    <p class="mt-3 font-bold text-text-main">Aucun événement trouvé</p>
                     <p class="mt-1 text-sm text-text-sub">
-                        {{ filtreTypeId || filtreStatut || recherche
-                            ? 'Aucun résultat avec ces filtres.'
-                            : (estAdminPur ? 'Aucun événement à superviser pour le moment.' : 'Commencez par créer un événement.') }}
+                        {{ filtreTypeId || filtreStatut || recherche ? 'Aucun résultat avec ces filtres.' : (estAdminPur ? 'Aucun événement à superviser.' : 'Créez votre premier événement.') }}
                     </p>
                     <Link v-if="!estAdminPur" href="/evenements/create"
-                        class="mt-4 inline-block rounded-lg bg-moov-noir px-5 py-2.5 text-sm font-bold text-white">
-                        Nouvel Événement 
+                        class="mt-4 inline-block rounded-lg bg-moov-noir px-5 py-2.5 text-sm font-bold text-white transition hover:bg-moov-noir-soft">
+                        Nouvel Événement
                     </Link>
                 </div>
             </div>
 
-            <div v-if="evenements?.links?.length > 3" class="mt-6 flex justify-center gap-1">
-                <template v-for="link in evenements.links" :key="link.label">
+            <div v-if="evenements?.links?.length > 3" class="mt-6 flex justify-center gap-1">                <template v-for="link in evenements.links" :key="link.label">
                     <Link v-if="link.url" :href="link.url" v-html="link.label" :class="['rounded-lg px-3 py-1.5 text-sm font-semibold transition',
                         link.active
                             ? 'bg-moov-blue text-white'
@@ -572,7 +592,7 @@ const publierEvenement = (id) => {
 
         <!-- Badge -->
         <div class="mb-6 animate-fade-up">
-            <span class="inline-flex items-center gap-2 rounded-full border border-moov-orange/40 bg-moov-orange/20 px-5 py-2 text-xs font-bold uppercase tracking-[0.25em] text-moov-orange backdrop-blur-sm">
+            <span class="inline-flex items-center gap-2 rounded-full border border-moov-orange/40 bg-moov-orange/20 px-5 py-2 text-xs font-bold uppercase tracking-[0.25em] text-white backdrop-blur-sm">
                 <span class="h-1.5 w-1.5 rounded-full bg-moov-orange animate-pulse"/>
                 Moov Africa Burkina · dCIRP
             </span>

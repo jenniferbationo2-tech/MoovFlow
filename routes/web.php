@@ -15,6 +15,8 @@ use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\DotationController;
 use App\Http\Controllers\EnqueteController;
 use App\Http\Controllers\EvenementController;
+use App\Http\Controllers\NotificationBarreController;
+use App\Http\Controllers\TypeEvenementController;
 use App\Http\Controllers\IntervenantController;
 use App\Http\Controllers\InscriptionController;
 use App\Http\Controllers\LogistiqueController;
@@ -47,6 +49,8 @@ Route::post('paiements/callback', [PaiementController::class, 'callback'])->name
 Route::middleware('auth')->group(function () {
 
      Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+     Route::post('/dashboard/enveloppe-rse', [DashboardController::class, 'updateEnveloppeRse'])->name('dashboard.enveloppe-rse');
+     Route::post('/notifications/vues', [NotificationBarreController::class, 'marquerVues'])->name('notifications.vues');
 
      //  Evenements 
      Route::resource('evenements', EvenementController::class)->except(['index', 'show']);
@@ -54,6 +58,11 @@ Route::middleware('auth')->group(function () {
      Route::get('evenements/{evenement}/export-participants-pdf', [\App\Http\Controllers\InscriptionController::class, 'exportParticipantsPdf'])
           ->name('evenements.export-participants-pdf');
      Route::patch('evenements/{evenement}/statut', [EvenementController::class, 'updateStatut'])->name('evenements.updateStatut');
+
+     //  Typologies d'événements (gestion réservée au responsable dCIRP)
+     Route::get('/types-evenement', [TypeEvenementController::class, 'index'])->name('types-evenement.index');
+     Route::post('/types-evenement', [TypeEvenementController::class, 'store'])->name('types-evenement.store');
+     Route::delete('/types-evenement/{typeEvenement}', [TypeEvenementController::class, 'destroy'])->name('types-evenement.destroy');
 
 
      // Workflow validation événements
@@ -199,8 +208,11 @@ Route::middleware('auth')->group(function () {
           Route::get('/', [CompetitionController::class, 'index'])->name('index');
           Route::post('/equipes', [CompetitionController::class, 'storeEquipe'])->name('equipes.store');
           Route::delete('/equipes/{equipe}', [CompetitionController::class, 'destroyEquipe'])->name('equipes.destroy');
+          Route::post('/equipes/{equipe}/membres', [CompetitionController::class, 'storeMembre'])->name('equipes.membres.store');
+          Route::delete('/equipes/{equipe}/membres/{membre}', [CompetitionController::class, 'destroyMembre'])->name('equipes.membres.destroy');
           Route::post('/phases', [CompetitionController::class, 'storePhase'])->name('phases.store');
           Route::delete('/phases/{phase}', [CompetitionController::class, 'destroyPhase'])->name('phases.destroy');
+          Route::post('/phases/{phase}/generer-suivante', [CompetitionController::class, 'genererPhaseSuivante'])->name('phases.generer-suivante');
           Route::post('/phases/{phase}/rencontres', [CompetitionController::class, 'storeRencontre'])->name('rencontres.store');
           Route::patch('/rencontres/{rencontre}/score', [CompetitionController::class, 'updateScore'])->name('rencontres.score');
           Route::delete('/rencontres/{rencontre}', [CompetitionController::class, 'destroyRencontre'])->name('rencontres.destroy');
@@ -303,6 +315,10 @@ Route::middleware('auth')->group(function () {
           ->name('evenements.dashboard')
           ->where('evenement', '[0-9]+');
 
+     Route::post('/evenements/{evenement}/objectifs-rse', [\App\Http\Controllers\AnalyseController::class, 'updateObjectifsRse'])
+          ->name('evenements.objectifs-rse.update')
+          ->where('evenement', '[0-9]+');
+
      Route::get('/rapport-rse', [\App\Http\Controllers\AnalyseController::class, 'rapportRse'])
           ->name('analyses.rapport-rse');
 
@@ -365,8 +381,6 @@ Route::middleware('auth')->group(function () {
      Route::post('/postes-benevoles/{poste}/candidater', [\App\Http\Controllers\BenevoleController::class, 'candidater'])
           ->name('postes-benevoles.candidater')
           ->where('poste', '[0-9]+');
-     Route::get('/mes-candidatures-benevolat', [\App\Http\Controllers\BenevoleController::class, 'mesCandidatures'])
-          ->name('benevolat.mes-candidatures');
      Route::post('/candidatures-benevoles/{candidature}/annuler', [\App\Http\Controllers\BenevoleController::class, 'annulerCandidature'])
           ->name('candidatures-benevoles.annuler')
           ->where('candidature', '[0-9]+');
@@ -420,6 +434,20 @@ Route::middleware('auth')->group(function () {
           [\App\Http\Controllers\CertificatController::class, 'telechargerMien']
      )
           ->name('mes-certificats.telecharger');
+
+     // ──── Mes enquêtes (participant) ────
+     Route::get('/mes-enquetes', [EnqueteController::class, 'mesEnquetes'])
+          ->name('mes-enquetes.index');
+     Route::get('/mes-enquetes/{enquete}', [EnqueteController::class, 'monEnquete'])
+          ->name('mes-enquetes.show')
+          ->where('enquete', '[0-9]+');
+     Route::post('/mes-enquetes/{enquete}/repondre', [EnqueteController::class, 'mesReponses'])
+          ->name('mes-enquetes.repondre')
+          ->where('enquete', '[0-9]+');
+
+     // ──── Mes candidatures bénévolat (participant) ────
+     Route::get('/mes-candidatures-benevolat', [\App\Http\Controllers\BenevoleController::class, 'mesCandidatures'])
+          ->name('benevolat.mes-candidatures');
 });
 
 require __DIR__ . '/auth.php';

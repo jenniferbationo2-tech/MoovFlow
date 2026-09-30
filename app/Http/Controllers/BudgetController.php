@@ -7,6 +7,7 @@ use App\Models\Evenement;
 use App\Models\LigneBudget;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 
 class BudgetController extends Controller
@@ -27,6 +28,8 @@ class BudgetController extends Controller
      */
     public function storeLigne(Request $request, Budget $budget): RedirectResponse
     {
+        $this->authorizeGestion($budget->evenement);
+
         $validated = $request->validate([
             'libelle' => ['required', 'string', 'max:255'],
             'montant' => ['required', 'numeric', 'min:0'],
@@ -43,6 +46,8 @@ class BudgetController extends Controller
      */
     public function updateLigne(Request $request, LigneBudget $ligneBudget): RedirectResponse
     {
+        $this->authorizeGestion($ligneBudget->budget->evenement);
+
         $validated = $request->validate([
             'libelle' => ['required', 'string', 'max:255'],
             'montant' => ['required', 'numeric', 'min:0'],
@@ -59,8 +64,27 @@ class BudgetController extends Controller
      */
     public function destroyLigne(LigneBudget $ligneBudget): RedirectResponse
     {
+        $this->authorizeGestion($ligneBudget->budget->evenement);
+
         $ligneBudget->delete();
 
         return back()->with('success', 'Ligne budgétaire supprimée avec succès.');
+    }
+
+    /**
+     * Seul le responsable dCIRP ou l'organisateur créateur de l'événement peut gérer son budget.
+     */
+    private function authorizeGestion(Evenement $evenement): void
+    {
+        $user = Auth::user();
+
+        abort_unless(
+            $user && (
+                $user->hasRole('responsable_dcirp') ||
+                ($user->hasRole('organisateur') && $evenement->created_by === $user->id)
+            ),
+            403,
+            'Vous n\'êtes pas autorisé à gérer le budget de cet événement.'
+        );
     }
 }

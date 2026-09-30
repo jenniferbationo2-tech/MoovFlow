@@ -60,7 +60,14 @@ const stats = computed(() => ({
 
                 <!-- En-tête -->
                 <div class="mb-10">
-                    <p class="text-xs font-bold uppercase tracking-[0.2em] text-text-muted">
+                    <Link href="/dashboard"
+                          class="inline-flex items-center gap-1.5 text-sm font-semibold text-text-sub transition hover:text-moov-blue">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                        </svg>
+                        Mon espace personnel
+                    </Link>
+                    <p class="mt-4 text-xs font-bold uppercase tracking-[0.2em] text-text-muted">
                         Espace personnel
                     </p>
                     <h1 class="mt-2 font-display text-3xl font-extrabold text-text-main">

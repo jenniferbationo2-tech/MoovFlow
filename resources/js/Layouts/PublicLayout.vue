@@ -73,22 +73,10 @@ const anneeCourante = new Date().getFullYear()
                     <!-- ─── ACTIONS DESKTOP ─── -->
                     <div class="hidden md:flex items-center gap-4">
 
-                        <!-- Favoris (décoratif) -->
-                        <button type="button"
-                                title="Favoris (bientôt disponible)"
-                                class="relative flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-rose-500">
-                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z"/>
-                            </svg>
-                        </button>
-
-                        <!-- Séparateur visuel -->
-                        <div class="h-6 w-px bg-slate-200"/>
-
                         <!-- Visiteur (non connecté) -->
                         <template v-if="!user">
                             <Link href="/login"
-                                  class="text-sm font-bold text-slate-700 transition hover:text-white">
+                                  class="text-sm font-bold text-white transition hover:text-moov-orange">
                                 Se connecter
                             </Link>
                             <Link href="/register"
@@ -205,7 +193,7 @@ const anneeCourante = new Date().getFullYear()
                 
                 <div v-if="menuBurgerOpen" class="md:hidden border-t border-slate-200 py-3 space-y-2">
                     <template v-if="!user">
-                        <Link href="/login" class="block rounded-lg px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100">
+                        <Link href="/login" class="block rounded-lg px-3 py-2 text-sm font-bold text-white hover:bg-white/10">
                             Se connecter
                         </Link>
                         <Link href="/register" class="block rounded-lg bg-moov-blue px-3 py-2 text-center text-sm font-bold text-white">

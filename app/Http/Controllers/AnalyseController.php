@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Evenement;
+use App\Models\ObjectifRse;
 use App\Services\AnalyseService;
 use Carbon\Carbon;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -60,11 +62,52 @@ class AnalyseController extends Controller
             'postesBenevoles.candidatures',
         ]);
 
+        $user = Auth::user();
+        $peutModifierRse = $user->hasRole('responsable_dcirp')
+            || ($user->hasRole('organisateur') && $evenement->created_by === $user->id);
+
         return Inertia::render('Evenements/Dashboard', [
-            'evenement'         => $evenement,
-            'kpis'              => $this->service->kpisEvenement($evenement),
-            'statutsInscriptions' => $this->service->statutsInscriptions($evenement),
+            'evenement'            => $evenement,
+            'kpis'                 => $this->service->kpisEvenement($evenement),
+            'statutsInscriptions'  => $this->service->statutsInscriptions($evenement),
+            'objectifRse'          => ObjectifRse::where('evenement_id', $evenement->id)->first(),
+            'peutModifierRse'      => $peutModifierRse,
         ]);
+    }
+
+    /**
+     * Enregistre (crée ou met à jour) le bilan d'impact RSE d'un événement.
+     */
+    public function updateObjectifsRse(Request $request, Evenement $evenement): RedirectResponse
+    {
+        $this->authorizeAccessEvenement($evenement);
+
+        $validated = $request->validate([
+            'type_impact'                => ['required', 'string', 'max:100'],
+            'nb_beneficiaires_directs'   => ['required', 'integer', 'min:0'],
+            'nb_beneficiaires_indirects' => ['nullable', 'integer', 'min:0'],
+            'nb_femmes_beneficiaires'    => ['nullable', 'integer', 'min:0'],
+            'nb_associations_soutenues'  => ['nullable', 'integer', 'min:0'],
+            'nb_projets_accompagnes'     => ['nullable', 'integer', 'min:0'],
+            'nb_emplois_crees'           => ['nullable', 'integer', 'min:0'],
+            'montants_collectes'         => ['nullable', 'numeric', 'min:0'],
+            'retombees_partenaires'      => ['nullable', 'numeric', 'min:0'],
+            'score_environnemental'      => ['nullable', 'numeric', 'min:0', 'max:100'],
+        ]);
+
+        // Le nombre de femmes bénéficiaires ne peut pas dépasser le total de bénéficiaires directs
+        if (($validated['nb_femmes_beneficiaires'] ?? 0) > $validated['nb_beneficiaires_directs']) {
+            return back()->withErrors([
+                'nb_femmes_beneficiaires' => 'Ne peut pas dépasser le nombre de bénéficiaires directs.',
+            ])->withInput();
+        }
+
+        ObjectifRse::updateOrCreate(
+            ['evenement_id' => $evenement->id],
+            $validated
+        );
+
+        return back()->with('success', 'Bilan d\'impact RSE enregistré avec succès.');
     }
 
     /**
@@ -116,7 +159,7 @@ class AnalyseController extends Controller
     {
         $user = Auth::user();
         abort_unless(
-            $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']),
+            $user && $user->hasAnyRole(['responsable_dcirp', 'organisateur']),
             403,
             'Accès réservé au staff.'
         );
@@ -126,7 +169,7 @@ class AnalyseController extends Controller
     {
         $user = Auth::user();
 
-        if ($user->hasAnyRole(['admin', 'responsable_dcirp'])) {
+        if ($user->hasRole('responsable_dcirp')) {
             return;
         }
 

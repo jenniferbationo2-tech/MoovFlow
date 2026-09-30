@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Budget;
 use App\Models\Evenement;
 use App\Models\Lieu;
 use App\Models\TypeEvenement;
@@ -19,15 +20,29 @@ class EvenementController extends Controller
     {
         $now = now();
         $user = Auth::user();
-        $estStaff = $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']);
+        $estStaff = $user && $user->hasAnyRole(['responsable_dcirp', 'organisateur']);
+
+        $appliquerFiltresCommuns = function ($q) use ($request) {
+            if ($request->filled('type')) {
+                $q->whereHas('typeEvenement', fn ($tq) => $tq->where('code', $request->type));
+            }
+            if ($request->filled('search')) {
+                $recherche = $request->string('search');
+                $q->where(function ($sq) use ($recherche) {
+                    $sq->where('titre', 'like', "%{$recherche}%")
+                        ->orWhereHas('lieu', fn ($lq) => $lq->where('nom', 'like', "%{$recherche}%"));
+                });
+            }
+        };
 
         $query = Evenement::query()
             ->with(['typeEvenement', 'lieu', 'tarifs'])
             ->withCount('inscriptions');
 
+        $appliquerFiltresCommuns($query);
 
-        if ($request->filled('type')) {
-            $query->whereHas('typeEvenement', fn($q) => $q->where('code', $request->type));
+        if ($request->filled('statut')) {
+            $query->where('statut', $request->statut);
         }
 
         // Si non-staff : uniquement les publiés / en_cours / terminé
@@ -35,35 +50,81 @@ class EvenementController extends Controller
             $query->whereIn('statut', ['publie', 'en_cours', 'termine']);
         }
 
-        $evenements = $query->latest('date_debut')->paginate(12);
+        $query->latest('date_debut');
 
-        // CALCUL DES KPIs (basé sur tous les events visibles) 
-        $statutsAffichables = ['publie', 'en_cours', 'termine'];
-        $baseQueryKpi = Evenement::query()
-            ->whereIn('statut', $statutsAffichables);
+        // Événements auxquels l'utilisateur connecté a déjà une inscription active,
+        // pour désactiver le bouton "S'inscrire" et afficher "Déjà inscrit" à la place.
+        $evenementIdsInscrits = $user
+            ? \App\Models\Inscription::where('user_id', $user->id)
+                ->whereNotIn('statut', [\App\Models\Inscription::STATUT_REFUSEE, \App\Models\Inscription::STATUT_ANNULEE])
+                ->pluck('evenement_id')
+                ->all()
+            : [];
 
-        $totalEvenements = (clone $baseQueryKpi)
-            ->whereIn('statut', ['publie', 'en_cours'])  // À venir ou en cours seulement
-            ->count();
+        $annoterInscription = function ($collection) use ($evenementIdsInscrits) {
+            $collection->each(function ($ev) use ($evenementIdsInscrits) {
+                $ev->deja_inscrit = in_array($ev->id, $evenementIdsInscrits);
+            });
+        };
 
-        $enCoursCount = (clone $baseQueryKpi)
-            ->where('date_debut', '<=', $now)
-            ->where('date_fin', '>=', $now)
-            ->count();
+        if ($estStaff) {
+            // Vue de gestion groupée par type : pas de pagination, sinon un type
+            // nombreux remplit la page et masque les autres types.
+            $tousLesEvenements = $query->get();
+            $annoterInscription($tousLesEvenements);
+            $evenements = [
+                'data'  => $tousLesEvenements,
+                'links' => [],
+                'total' => $tousLesEvenements->count(),
+            ];
+        } else {
+            $evenements = $query->paginate(12)->withQueryString();
+            $annoterInscription($evenements->getCollection());
+        }
 
-        $typologiesCount = TypeEvenement::count();
+        // CALCUL DES KPIs (sur l'ensemble filtré par type/recherche, indépendamment
+        // du statut sélectionné, pour que chaque bouton affiche son vrai total).
+        if ($estStaff) {
+            $baseQueryKpi = Evenement::query();
+            $appliquerFiltresCommuns($baseQueryKpi);
+
+            $kpis = [
+                'total'      => (clone $baseQueryKpi)->count(),
+                'publie'     => (clone $baseQueryKpi)->where('statut', 'publie')->count(),
+                'en_cours'   => (clone $baseQueryKpi)->where('statut', 'en_cours')->count(),
+                'brouillon'  => (clone $baseQueryKpi)->where('statut', 'brouillon')->count(),
+                'archive'    => (clone $baseQueryKpi)->where('statut', 'archive')->count(),
+                'typologies' => TypeEvenement::count(),
+            ];
+        } else {
+            $statutsAffichables = ['publie', 'en_cours', 'termine'];
+            $baseQueryKpi = Evenement::query()->whereIn('statut', $statutsAffichables);
+
+            $kpis = [
+                'total'      => (clone $baseQueryKpi)->whereIn('statut', ['publie', 'en_cours'])->count(),
+                'en_cours'   => (clone $baseQueryKpi)->where('date_debut', '<=', $now)->where('date_fin', '>=', $now)->count(),
+                'typologies' => TypeEvenement::count(),
+            ];
+        }
 
         $types = TypeEvenement::orderBy('nom')->get();
+
+        $statuts = $estStaff ? [
+            ['value' => 'brouillon', 'label' => 'Brouillon'],
+            ['value' => 'en_validation', 'label' => 'En validation'],
+            ['value' => 'publie', 'label' => 'Publié'],
+            ['value' => 'en_cours', 'label' => 'En cours'],
+            ['value' => 'termine', 'label' => 'Terminé'],
+            ['value' => 'archive', 'label' => 'Archivé'],
+            ['value' => 'annule', 'label' => 'Annulé'],
+        ] : [];
 
         return Inertia::render('Evenements/Index', [
             'evenements' => $evenements,
             'types'      => $types,
-            'filters'    => $request->only(['type']),
-            'kpis'       => [
-                'total'      => $totalEvenements,
-                'en_cours'   => $enCoursCount,
-                'typologies' => $typologiesCount,
-            ],
+            'statuts'    => $statuts,
+            'filters'    => $request->only(['type', 'statut', 'search']),
+            'kpis'       => $kpis,
             'now'        => $now->toIso8601String(),  // Date courante pour statuts dynamiques côté Vue
         ]);
     }
@@ -80,9 +141,43 @@ class EvenementController extends Controller
         try {
             $evenement->load('objectifsRse');
         } catch (\Exception $e) {
-            
+
         }
 
+        // Budget : uniquement chargé/exposé au staff habilité (données financières).
+        $user = Auth::user();
+        $peutGererBudget = $user && (
+            $user->hasRole('responsable_dcirp') ||
+            ($user->hasRole('organisateur') && $evenement->created_by === $user->id)
+        );
+
+        $budget = null;
+        if ($peutGererBudget) {
+            // Se crée d'elle-même si absente (événements créés avant cette fonctionnalité).
+            $budgetModel = Budget::firstOrCreate(
+                ['evenement_id' => $evenement->id],
+                ['montant_previsionnel' => $evenement->budget_prev ?? 0, 'devise' => 'XOF']
+            );
+            $budgetModel->load('lignesBudget');
+
+            $recettes = (float) $budgetModel->lignesBudget->where('type', 'recette')->sum('montant');
+            $depenses = (float) $budgetModel->lignesBudget->where('type', 'depense')->sum('montant');
+
+            $budget = [
+                'id'                   => $budgetModel->id,
+                'devise'               => $budgetModel->devise,
+                'montant_previsionnel' => (float) $budgetModel->montant_previsionnel,
+                'recettes'             => $recettes,
+                'depenses'             => $depenses,
+                'solde'                => round($recettes - $depenses, 2),
+                'lignes'               => $budgetModel->lignesBudget->map(fn ($l) => [
+                    'id'      => $l->id,
+                    'libelle' => $l->libelle,
+                    'montant' => (float) $l->montant,
+                    'type'    => $l->type,
+                ])->values(),
+            ];
+        }
 
         $postesBenevoles = $evenement->postesBenevoles()
             ->where('statut', 'ouvert')
@@ -97,9 +192,24 @@ class EvenementController extends Controller
             ->filter(fn($p) => $p->places_restantes > 0)
             ->values();
 
+        // Vérifier si l'utilisateur connecté est déjà inscrit
+        $dejaInscrit = false;
+        $inscriptionExistante = null;
+        if (Auth::check()) {
+            $inscriptionExistante = \App\Models\Inscription::where('evenement_id', $evenement->id)
+                ->where('user_id', Auth::id())
+                ->whereNotIn('statut', [\App\Models\Inscription::STATUT_REFUSEE, \App\Models\Inscription::STATUT_ANNULEE])
+                ->first();
+            $dejaInscrit = (bool) $inscriptionExistante;
+        }
+
         return Inertia::render('Evenements/Show', [
-            'evenement'       => $evenement,
-            'postesBenevoles' => $postesBenevoles,  
+            'evenement'           => $evenement,
+            'postesBenevoles'     => $postesBenevoles,
+            'dejaInscrit'         => $dejaInscrit,
+            'inscriptionId'       => $inscriptionExistante?->id,
+            'budget'              => $budget,
+            'peutGererBudget'     => $peutGererBudget,
         ]);
     }
 
@@ -123,7 +233,7 @@ class EvenementController extends Controller
             'lieux'              => $lieux,
             'typePreselectionne' => $typePreselectionne,
             'userRole'           => [
-                'estResponsable' => $user->hasAnyRole(['admin', 'responsable_dcirp']),
+                'estResponsable' => $user->hasRole('responsable_dcirp'),
                 'estOrganisateur' => $user->hasRole('organisateur'),
             ]
         ]);
@@ -146,8 +256,8 @@ class EvenementController extends Controller
             'description'          => ['nullable', 'string'],
             'type_evenement_id'    => ['required', 'exists:types_evenement,id'],
             'lieu_id'              => ['required', 'exists:lieux,id'],
-            'date_debut'           => ['required', 'date'],
-            'date_fin'             => ['required', 'date', 'after_or_equal:date_debut'],
+            'date_debut'           => ['required', 'date', 'after_or_equal:today'],
+            'date_fin'             => ['required', 'date', 'after:date_debut'],
             'capacite_max'         => ['nullable', 'integer', 'min:0'],
             'budget_previsionnel'  => ['nullable', 'numeric', 'min:0'],
             'public_cible'         => ['nullable', 'string', 'max:200'],
@@ -164,6 +274,28 @@ class EvenementController extends Controller
         $rules = array_merge($rules, $this->getReglesValidationParType($typeCode));
 
         $validated = $request->validate($rules);
+
+        // La colonne réelle en base est `budget_prev` (seule autorisée en mass-assignment) ;
+        // le formulaire envoie `budget_previsionnel`. On fait le pont ici.
+        if (array_key_exists('budget_previsionnel', $validated)) {
+            $validated['budget_prev'] = $validated['budget_previsionnel'];
+            unset($validated['budget_previsionnel']);
+        }
+
+        // ── DÉTECTION DOUBLONS ──
+        $doublon = Evenement::where('titre', trim($validated['titre']))
+            ->where('type_evenement_id', $validated['type_evenement_id'])
+            ->where('lieu_id', $validated['lieu_id'])
+            ->where('date_debut', $validated['date_debut'])
+            ->whereNotIn('statut', ['annule'])
+            ->first();
+
+        if ($doublon) {
+            return back()->withErrors([
+                'titre' => "Un événement identique existe déjà : « {$doublon->titre} » prévu le " .
+                    \Carbon\Carbon::parse($doublon->date_debut)->locale('fr')->isoFormat('LL') . '.',
+            ])->withInput();
+        }
 
         $data = collect($validated)
             ->except(['visuel', 'reglement_pdf', 'tarifs'])
@@ -188,6 +320,12 @@ class EvenementController extends Controller
 
         // ── CRÉATION ──
         $evenement = Evenement::create($data);
+
+        // ── BUDGET (fiche budget liée, pré-remplie avec le prévisionnel) ──
+        $evenement->budgets()->create([
+            'montant_previsionnel' => $data['budget_prev'] ?? 0,
+            'devise'               => 'XOF',
+        ]);
 
         // ── TARIFS ──
         if (!empty($validated['tarifs'])) {
@@ -240,8 +378,10 @@ class EvenementController extends Controller
             'description'          => ['nullable', 'string'],
             'type_evenement_id'    => ['required', 'exists:types_evenement,id'],
             'lieu_id'              => ['required', 'exists:lieux,id'],
+            // En édition, on autorise la date actuelle déjà passée (pas de after_or_equal:today)
+            // Seule contrainte : fin doit être après début
             'date_debut'           => ['required', 'date'],
-            'date_fin'             => ['required', 'date', 'after_or_equal:date_debut'],
+            'date_fin'             => ['required', 'date', 'after:date_debut'],
             'capacite_max'         => ['nullable', 'integer', 'min:0'],
             'budget_previsionnel'  => ['nullable', 'numeric', 'min:0'],
             'public_cible'         => ['nullable', 'string', 'max:200'],
@@ -254,6 +394,13 @@ class EvenementController extends Controller
         $rules = array_merge($rules, $this->getReglesValidationParType($typeCode));
 
         $validated = $request->validate($rules);
+
+        // La colonne réelle en base est `budget_prev` (seule autorisée en mass-assignment) ;
+        // le formulaire envoie `budget_previsionnel`. On fait le pont ici.
+        if (array_key_exists('budget_previsionnel', $validated)) {
+            $validated['budget_prev'] = $validated['budget_previsionnel'];
+            unset($validated['budget_previsionnel']);
+        }
 
         $data = collect($validated)
             ->except(['visuel', 'reglement_pdf'])
@@ -275,6 +422,14 @@ class EvenementController extends Controller
         }
 
         $evenement->update($data);
+
+        // ── BUDGET (garder la fiche budget liée synchronisée avec le prévisionnel) ──
+        if (array_key_exists('budget_prev', $data)) {
+            Budget::updateOrCreate(
+                ['evenement_id' => $evenement->id],
+                ['montant_previsionnel' => $data['budget_prev'] ?? 0]
+            );
+        }
 
         return redirect()->route('evenements.show', $evenement->id)
             ->with('success', 'Événement mis à jour avec succès !');
@@ -298,7 +453,7 @@ class EvenementController extends Controller
         $user = Auth::user();
 
         abort_unless(
-            $evenement->created_by === $user->id || $user->hasRole('admin'),
+            $evenement->created_by === $user->id,
             403,
             'Vous n\'êtes pas autorisé à demander la validation.'
         );
@@ -322,7 +477,7 @@ class EvenementController extends Controller
         $user = Auth::user();
 
         abort_unless(
-            $user->hasAnyRole(['responsable_dcirp', 'admin']),
+            $user->hasRole('responsable_dcirp'),
             403,
             'Seul le responsable dCIRP peut valider les événements.'
         );
@@ -348,7 +503,7 @@ class EvenementController extends Controller
         $user = Auth::user();
 
         abort_unless(
-            $user->hasAnyRole(['responsable_dcirp', 'admin']),
+            $user->hasRole('responsable_dcirp'),
             403,
             'Action non autorisée.'
         );
@@ -415,7 +570,7 @@ class EvenementController extends Controller
         $user = Auth::user();
 
         abort_unless(
-            $user->hasAnyRole(['admin', 'responsable_dcirp']),
+            $user->hasRole('responsable_dcirp'),
             403,
             'Action non autorisée.'
         );
@@ -443,8 +598,7 @@ class EvenementController extends Controller
     {
         $user = Auth::user();
         $canEdit = $user && (
-            $user->hasRole('admin') ||
-            ($user->hasRole('responsable_dcirp')) ||
+            $user->hasRole('responsable_dcirp') ||
             ($evenement->created_by === $user->id)
         );
 

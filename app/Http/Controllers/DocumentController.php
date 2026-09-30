@@ -131,7 +131,7 @@ class DocumentController extends Controller
             return false;
         }
 
-        if ($user->hasRole('admin') || $user->hasRole('organisateur')) {
+        if ($user->hasRole('responsable_dcirp') || $user->hasRole('organisateur')) {
             return true;
         }
 

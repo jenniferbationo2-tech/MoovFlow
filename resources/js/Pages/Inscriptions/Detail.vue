@@ -63,9 +63,14 @@ const presele = async () => {
 }
 
 // Recommandation (Organisateur)
-const peutRecommander = computed(() =>
-    ['dossier_soumis', 'en_analyse'].includes(props.inscription.statut)
-)
+const peutRecommander = computed(() => {
+    // Types sans présélection (CONF, FORMATION) : recommandation depuis preinscrit possible
+    if (!necessitePreselection.value) {
+        return ['preinscrit', 'dossier_soumis', 'en_analyse'].includes(props.inscription.statut)
+    }
+    // Autres types : dossier doit avoir été soumis
+    return ['dossier_soumis', 'en_analyse'].includes(props.inscription.statut)
+})
 const modalRecommandation = ref(false)
 const noteOrganisateur = ref('')
 
@@ -207,18 +212,7 @@ const confirmerRefus = () => {
 
                     <div class="space-y-4 p-5 text-sm">
 
-                        <!-- ─── INFOS COMMUNES ─── -->
-                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <div v-if="inscription.dossier.organisation">
-                                <p class="text-[11px] font-bold uppercase tracking-wider text-text-muted">Organisation</p>
-                                <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.organisation }}</p>
-                            </div>
-                            <div v-if="inscription.dossier.fonction">
-                                <p class="text-[11px] font-bold uppercase tracking-wider text-text-muted">Fonction</p>
-                                <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.fonction }}</p>
-                            </div>
-                        </div>
-
+                        <!-- Motivation générale -->
                         <div v-if="inscription.dossier.motivation" class="rounded-lg bg-slate-50 p-3">
                             <p class="text-[11px] font-bold uppercase tracking-wider text-text-muted">Motivation</p>
                             <p class="mt-1 whitespace-pre-line leading-relaxed text-text-main">
@@ -246,27 +240,39 @@ const confirmerRefus = () => {
                         <!-- ─── BARA MOUSSO ─── -->
                         <template v-if="typeCode === 'BARA_MOUSSO'">
                             <div class="border-t border-border-soft pt-4">
-                                <p class="mb-3 text-[11px] font-bold uppercase tracking-wider text-rose-600">Projet associatif</p>
+                                <p class="mb-3 text-[11px] font-bold uppercase tracking-wider text-rose-600">Projet associatif / Entrepreneurial</p>
                                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                    <div v-if="inscription.dossier.nom_association">
-                                        <p class="text-[11px] font-bold text-text-muted">Nom association</p>
-                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.nom_association }}</p>
+                                    <div v-if="inscription.dossier.localite">
+                                        <p class="text-[11px] font-bold text-text-muted">Localité</p>
+                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.localite }}</p>
                                     </div>
-                                    <div v-if="inscription.dossier.nb_membres_association">
-                                        <p class="text-[11px] font-bold text-text-muted">Membres</p>
-                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.nb_membres_association }} personnes</p>
+                                    <div v-if="inscription.dossier.domaine_activite">
+                                        <p class="text-[11px] font-bold text-text-muted">Domaine d'activité</p>
+                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.domaine_activite }}</p>
+                                    </div>
+                                    <div v-if="inscription.dossier.effectif_employe">
+                                        <p class="text-[11px] font-bold text-text-muted">Effectif employé</p>
+                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.effectif_employe }}</p>
+                                    </div>
+                                    <div v-if="inscription.dossier.annee_creation">
+                                        <p class="text-[11px] font-bold text-text-muted">Année de création</p>
+                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.annee_creation }}</p>
                                     </div>
                                 </div>
                                 <div v-if="inscription.dossier.description_projet" class="mt-3">
                                     <p class="text-[11px] font-bold text-text-muted">Description du projet</p>
                                     <p class="mt-1 whitespace-pre-line text-text-main">{{ inscription.dossier.description_projet }}</p>
                                 </div>
-                                <div v-if="inscription.dossier.budget_projet" class="mt-3 inline-flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2">
-                                    <span class="text-[11px] font-bold uppercase tracking-wider text-rose-600">Budget</span>
+                                <div v-if="inscription.dossier.besoins_financiers" class="mt-3 inline-flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2">
+                                    <span class="text-[11px] font-bold uppercase tracking-wider text-rose-600">Besoins financiers</span>
                                     <span class="font-display text-base font-extrabold text-rose-700">
-                                        {{ Number(inscription.dossier.budget_projet).toLocaleString('fr-FR') }} FCFA
+                                        {{ Number(inscription.dossier.besoins_financiers).toLocaleString('fr-FR') }} FCFA
                                     </span>
                                 </div>
+                                <a v-if="inscription.dossier.url_video_pitch" :href="inscription.dossier.url_video_pitch" target="_blank"
+                                   class="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-moov-blue hover:underline">
+                                    Voir le pitch vidéo →
+                                </a>
                             </div>
                         </template>
 
@@ -279,17 +285,25 @@ const confirmerRefus = () => {
                                         <p class="text-[11px] font-bold text-text-muted">Nom de l'équipe</p>
                                         <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.nom_equipe }}</p>
                                     </div>
-                                    <div v-if="inscription.dossier.nb_joueurs">
-                                        <p class="text-[11px] font-bold text-text-muted">Joueurs</p>
-                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.nb_joueurs }} joueurs</p>
+                                    <div v-if="inscription.dossier.capitaine">
+                                        <p class="text-[11px] font-bold text-text-muted">Capitaine</p>
+                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.capitaine }}</p>
                                     </div>
-                                    <div v-if="inscription.dossier.categorie_equipe">
-                                        <p class="text-[11px] font-bold text-text-muted">Catégorie</p>
-                                        <p class="mt-0.5 font-bold text-text-main capitalize">{{ inscription.dossier.categorie_equipe }}</p>
+                                    <div v-if="inscription.dossier.categorie_age">
+                                        <p class="text-[11px] font-bold text-text-muted">Catégorie d'âge</p>
+                                        <p class="mt-0.5 font-bold text-text-main capitalize">{{ inscription.dossier.categorie_age }}</p>
                                     </div>
-                                    <div v-if="inscription.dossier.responsable_equipe">
-                                        <p class="text-[11px] font-bold text-text-muted">Responsable</p>
-                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.responsable_equipe }}</p>
+                                    <div v-if="inscription.dossier.effectif_equipe">
+                                        <p class="text-[11px] font-bold text-text-muted">Effectif</p>
+                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.effectif_equipe }} joueurs</p>
+                                    </div>
+                                    <div v-if="inscription.dossier.coach_nom">
+                                        <p class="text-[11px] font-bold text-text-muted">Coach</p>
+                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.coach_nom }}</p>
+                                    </div>
+                                    <div v-if="inscription.dossier.couleurs_maillot">
+                                        <p class="text-[11px] font-bold text-text-muted">Couleurs maillot</p>
+                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.couleurs_maillot }}</p>
                                     </div>
                                 </div>
                             </div>
@@ -300,38 +314,27 @@ const confirmerRefus = () => {
                             <div class="border-t border-border-soft pt-4">
                                 <p class="mb-3 text-[11px] font-bold uppercase tracking-wider text-orange-600">Équipe Hackathon</p>
                                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                    <div v-if="inscription.dossier.nom_equipe_hack">
+                                    <div v-if="inscription.dossier.nom_equipe_hack ?? inscription.dossier.nom_equipe">
                                         <p class="text-[11px] font-bold text-text-muted">Nom équipe</p>
-                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.nom_equipe_hack }}</p>
+                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.nom_equipe_hack ?? inscription.dossier.nom_equipe }}</p>
                                     </div>
-                                    <div v-if="inscription.dossier.nb_membres_equipe">
-                                        <p class="text-[11px] font-bold text-text-muted">Membres</p>
-                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.nb_membres_equipe }} personnes</p>
+                                    <div v-if="inscription.dossier.niveau_equipe">
+                                        <p class="text-[11px] font-bold text-text-muted">Niveau</p>
+                                        <p class="mt-0.5 font-bold text-text-main capitalize">{{ inscription.dossier.niveau_equipe }}</p>
                                     </div>
                                 </div>
-                                <div v-if="inscription.dossier.competences_techniques" class="mt-3">
-                                    <p class="text-[11px] font-bold text-text-muted">Compétences techniques</p>
-                                    <p class="mt-1 whitespace-pre-line text-text-main">{{ inscription.dossier.competences_techniques }}</p>
+                                <div v-if="inscription.dossier.idee" class="mt-3">
+                                    <p class="text-[11px] font-bold text-text-muted">Idée / Projet</p>
+                                    <p class="mt-1 whitespace-pre-line text-text-main">{{ inscription.dossier.idee }}</p>
                                 </div>
-                                <div v-if="inscription.dossier.stack_technologique" class="mt-3">
-                                    <p class="text-[11px] font-bold text-text-muted">Stack technologique</p>
-                                    <p class="mt-1 text-text-main">{{ inscription.dossier.stack_technologique }}</p>
+                                <div v-if="inscription.dossier.technologies" class="mt-3">
+                                    <p class="text-[11px] font-bold text-text-muted">Technologies</p>
+                                    <p class="mt-1 text-text-main">{{ inscription.dossier.technologies }}</p>
                                 </div>
-                            </div>
-                        </template>
-
-                        <!-- ─── FORMATION ─── -->
-                        <template v-else-if="typeCode === 'FORMATION'">
-                            <div class="border-t border-border-soft pt-4">
-                                <p class="mb-3 text-[11px] font-bold uppercase tracking-wider text-emerald-600">Profil apprenant</p>
-                                <div v-if="inscription.dossier.niveau_formation" class="mb-3 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1">
-                                    <span class="h-2 w-2 rounded-full bg-emerald-500"/>
-                                    <span class="text-xs font-bold capitalize text-emerald-700">Niveau {{ inscription.dossier.niveau_formation }}</span>
-                                </div>
-                                <div v-if="inscription.dossier.objectifs_apprentissage">
-                                    <p class="text-[11px] font-bold text-text-muted">Objectifs d'apprentissage</p>
-                                    <p class="mt-1 whitespace-pre-line text-text-main">{{ inscription.dossier.objectifs_apprentissage }}</p>
-                                </div>
+                                <a v-if="inscription.dossier.url_portfolio" :href="inscription.dossier.url_portfolio" target="_blank"
+                                   class="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-moov-blue hover:underline">
+                                    Voir le portfolio →
+                                </a>
                             </div>
                         </template>
 
@@ -344,39 +347,43 @@ const confirmerRefus = () => {
                                         <p class="text-[11px] font-bold text-text-muted">Titre de l'idée</p>
                                         <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.titre_idee }}</p>
                                     </div>
-                                    <div v-if="inscription.dossier.secteur_idee">
-                                        <p class="text-[11px] font-bold text-text-muted">Secteur</p>
-                                        <p class="mt-0.5 font-bold text-text-main capitalize">{{ inscription.dossier.secteur_idee }}</p>
+                                    <div v-if="inscription.dossier.stade_maturite">
+                                        <p class="text-[11px] font-bold text-text-muted">Stade de maturité</p>
+                                        <p class="mt-0.5 font-bold text-text-main capitalize">{{ inscription.dossier.stade_maturite }}</p>
+                                    </div>
+                                    <div v-if="inscription.dossier.marche_vise">
+                                        <p class="text-[11px] font-bold text-text-muted">Marché visé</p>
+                                        <p class="mt-0.5 font-bold text-text-main capitalize">{{ inscription.dossier.marche_vise }}</p>
+                                    </div>
+                                    <div v-if="inscription.dossier.statut_juridique">
+                                        <p class="text-[11px] font-bold text-text-muted">Statut juridique</p>
+                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.statut_juridique }}</p>
+                                    </div>
+                                    <div v-if="inscription.dossier.investissement_requis">
+                                        <p class="text-[11px] font-bold text-text-muted">Investissement requis</p>
+                                        <p class="mt-0.5 font-bold text-text-main">{{ Number(inscription.dossier.investissement_requis).toLocaleString('fr-FR') }} FCFA</p>
                                     </div>
                                 </div>
-                                <a v-if="inscription.dossier.fichier_presentation"
-                                   :href="`/storage/${inscription.dossier.fichier_presentation}`" target="_blank" download
-                                   class="mt-3 inline-flex items-center gap-2 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-violet-700">
-                                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                                    </svg>
-                                    Présentation du projet
-                                </a>
+                                <div v-if="inscription.dossier.description" class="mt-3">
+                                    <p class="text-[11px] font-bold text-text-muted">Description</p>
+                                    <p class="mt-1 whitespace-pre-line text-text-main">{{ inscription.dossier.description }}</p>
+                                </div>
                             </div>
                         </template>
 
-                        <!-- ─── SALON ─── -->
-                        <template v-else-if="typeCode === 'SALON'">
-                            <div class="border-t border-border-soft pt-4">
-                                <p class="mb-3 text-[11px] font-bold uppercase tracking-wider text-indigo-600">Visite stand</p>
+                        <!-- ─── FORMATION / CONF (défaut) ─── -->
+                        <template v-else>
+                            <div v-if="inscription.dossier.organisation || inscription.dossier.fonction"
+                                 class="border-t border-border-soft pt-4">
                                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                    <div v-if="inscription.dossier.secteur_activite">
-                                        <p class="text-[11px] font-bold text-text-muted">Secteur d'activité</p>
-                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.secteur_activite }}</p>
+                                    <div v-if="inscription.dossier.organisation">
+                                        <p class="text-[11px] font-bold text-text-muted">Organisation</p>
+                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.organisation }}</p>
                                     </div>
-                                    <div v-if="inscription.dossier.type_visite_salon">
-                                        <p class="text-[11px] font-bold text-text-muted">Type de visite</p>
-                                        <p class="mt-0.5 font-bold text-text-main capitalize">{{ inscription.dossier.type_visite_salon.replace('_', ' ') }}</p>
+                                    <div v-if="inscription.dossier.fonction">
+                                        <p class="text-[11px] font-bold text-text-muted">Fonction</p>
+                                        <p class="mt-0.5 font-bold text-text-main">{{ inscription.dossier.fonction }}</p>
                                     </div>
-                                </div>
-                                <div v-if="inscription.dossier.interets_b2b" class="mt-3">
-                                    <p class="text-[11px] font-bold text-text-muted">Intérêts B2B</p>
-                                    <p class="mt-1 whitespace-pre-line text-text-main">{{ inscription.dossier.interets_b2b }}</p>
                                 </div>
                             </div>
                         </template>

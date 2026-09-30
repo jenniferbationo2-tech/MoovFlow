@@ -23,3 +23,17 @@
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
 </IfModule>
+
+# Augmenter la limite d'upload à 12Mo pour les règlements PDF et visuels
+<IfModule mod_php.c>
+    php_value upload_max_filesize 12M
+    php_value post_max_size 15M
+    php_value memory_limit 256M
+    php_value max_execution_time 60
+</IfModule>
+<IfModule mod_php8.c>
+    php_value upload_max_filesize 12M
+    php_value post_max_size 15M
+    php_value memory_limit 256M
+    php_value max_execution_time 60
+</IfModule>

@@ -2,12 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\CandidatureBenevoleMail;
 use App\Models\CandidatureBenevole;
 use App\Models\PosteBenevole;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -16,8 +19,39 @@ class BenevoleController extends Controller
 
     public function index($evenement)
     {
-        return inertia('Logistique/Benevoles/Index', [
-            'evenement' => $evenement
+        // Résoudre l'événement depuis son ID (la route passe un int)
+        $evenementModel = \App\Models\Evenement::with(['typeEvenement', 'lieu'])->findOrFail($evenement);
+
+        // Autoriser : responsable dCIRP, ou organisateur propriétaire
+        $user = Auth::user();
+        abort_unless(
+            $user->hasRole('responsable_dcirp') ||
+            ($user->hasRole('organisateur') && $evenementModel->created_by === $user->id),
+            403,
+            'Accès non autorisé.'
+        );
+
+        // Charger les postes avec leurs candidatures
+        $postes = \App\Models\PosteBenevole::query()
+            ->where('evenement_id', $evenementModel->id)
+            ->withCount([
+                'candidatures as nb_candidats',
+                'candidatures as nb_acceptes' => fn($q) => $q->where('statut', 'accepte'),
+            ])
+            ->get();
+
+        $stats = [
+            'total_postes'    => $postes->count(),
+            'postes_ouverts'  => $postes->where('statut', 'ouvert')->count(),
+            'total_places'    => $postes->sum('places_max'),
+            'places_prises'   => $postes->sum('nb_acceptes'),
+            'total_candidats' => $postes->sum('nb_candidats'),
+        ];
+
+        return Inertia::render('Logistique/Benevoles/Index', [
+            'evenement' => $evenementModel,
+            'postes'    => $postes,
+            'stats'     => $stats,
         ]);
     }
 
@@ -63,14 +97,23 @@ class BenevoleController extends Controller
             'disponibilites' => ['nullable', 'string', 'max:500'],
         ]);
 
-        CandidatureBenevole::create([
-            'poste_id'        => $poste->id,
-            'user_id'         => $user->id,
-            'motivation'      => $validated['motivation'],
-            'experience'      => $validated['experience'] ?? null,
-            'disponibilites'  => $validated['disponibilites'] ?? null,
-            'statut'          => CandidatureBenevole::STATUT_CANDIDAT,
-        ]);
+        // updateOrCreate (et non create) : une candidature refusée ou annulée pour ce
+        // même poste laisse une ligne existante en base (contrainte unique poste+user) ;
+        // candidater à nouveau doit la relancer, pas créer un doublon qui violerait cette contrainte.
+        $candidature = CandidatureBenevole::updateOrCreate(
+            ['poste_id' => $poste->id, 'user_id' => $user->id],
+            [
+                'motivation'     => $validated['motivation'],
+                'experience'     => $validated['experience'] ?? null,
+                'disponibilites' => $validated['disponibilites'] ?? null,
+                'statut'         => CandidatureBenevole::STATUT_CANDIDAT,
+                'motif_refus'    => null,
+                'valide_par_id'  => null,
+                'valide_le'      => null,
+            ]
+        );
+
+        $this->envoyerMail($candidature, 'soumise');
 
         return back()->with('success', 'Votre candidature a été envoyée ! Vous serez notifié(e) de la décision par email.');
     }
@@ -178,6 +221,8 @@ class BenevoleController extends Controller
             }
         });
 
+        $this->envoyerMail($candidature, 'acceptee');
+
         return back()->with('success', 'Candidature acceptée. Le bénévole a été notifié.');
     }
 
@@ -199,7 +244,27 @@ class BenevoleController extends Controller
             'valide_le'     => now(),
         ]);
 
+        $this->envoyerMail($candidature, 'refusee');
+
         return back()->with('success', 'Candidature refusée. Le bénévole a été notifié avec le motif.');
+    }
+
+    /**
+     * Envoie un email de notification lié à une candidature bénévole.
+     * Un échec d'envoi n'interrompt jamais le workflow (candidature déjà enregistrée en base).
+     */
+    private function envoyerMail(CandidatureBenevole $candidature, string $type): void
+    {
+        $destinataire = $candidature->user?->email;
+        if (!$destinataire) {
+            return;
+        }
+
+        try {
+            Mail::to($destinataire)->send(new CandidatureBenevoleMail($candidature, $type));
+        } catch (\Exception $e) {
+            Log::error("Échec envoi email candidature bénévole : type={$type}, candidature_id={$candidature->id}, erreur={$e->getMessage()}");
+        }
     }
 
 
@@ -208,8 +273,8 @@ class BenevoleController extends Controller
     {
         $user = Auth::user();
 
-        // Admin + Responsable : tout pouvoir
-        if ($user->hasAnyRole(['admin', 'responsable_dcirp'])) {
+        // Responsable dCIRP : tout pouvoir
+        if ($user->hasRole('responsable_dcirp')) {
             return;
         }
 

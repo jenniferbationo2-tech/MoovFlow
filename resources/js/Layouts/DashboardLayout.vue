@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 
 const page = usePage()
@@ -9,6 +9,42 @@ const roles = computed(() => user.value?.roles ?? [])
 const appSettings = computed(() => page.props.app ?? {})
 
 const sidebarOpen = ref(true)
+
+// ─── NOTIFICATIONS (cloche navbar) ─────
+const notifications = computed(() => page.props.notifications ?? [])
+const notifActionables = computed(() => notifications.value.filter(n => n.type !== 'success'))
+const notifNonVues = computed(() => notifActionables.value.filter(n => n.nouveau))
+const notifOpen = ref(false)
+const notifRef = ref(null)
+
+const ouvrirNotifications = () => {
+    notifOpen.value = !notifOpen.value
+    if (notifOpen.value && notifNonVues.value.length > 0) {
+        router.post('/notifications/vues', {}, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => {
+                notifications.value.forEach(n => { n.nouveau = false })
+            },
+        })
+    }
+}
+
+const fermerNotifClickExterieur = (e) => {
+    if (notifRef.value && !notifRef.value.contains(e.target)) {
+        notifOpen.value = false
+    }
+}
+
+onMounted(() => document.addEventListener('click', fermerNotifClickExterieur))
+onBeforeUnmount(() => document.removeEventListener('click', fermerNotifClickExterieur))
+
+const styleNotif = (type) => ({
+    danger:  { border: 'border-red-500',     icon: 'bg-red-100 text-red-600' },
+    warning: { border: 'border-amber-500',   icon: 'bg-amber-100 text-amber-600' },
+    info:    { border: 'border-blue-500',    icon: 'bg-blue-100 text-blue-600' },
+    success: { border: 'border-emerald-500', icon: 'bg-emerald-100 text-emerald-600' },
+}[type] || { border: 'border-slate-400', icon: 'bg-slate-100 text-slate-600' })
 
 // ─── COULEUR D'ACCENT PAR RÔLE ─────────
 const couleurRole = computed(() => {
@@ -37,15 +73,11 @@ const peutVoirAdmin = computed(() =>
 // ─── MENUS PRINCIPAUX (par rôle) ───────
 const menusPrincipaux = computed(() => {
     if (roles.value.includes('admin')) {
+        // L'admin est un rôle technique : utilisateurs, journal d'audit,
+        // centre de sécurité et paramètres (section Administration ci-dessous).
+        // Il ne gère aucun domaine métier (événements, RSE, logistique...).
         return [
             { label: 'Tableau de Bord', icon: '▦', href: '/dashboard' },
-            { label: 'Gestion Événements', icon: '◷', href: '/evenements' },
-            { label: 'Dossiers Inscriptions', icon: '◫', href: '/inscriptions' },
-            { label: 'Annuaire Participants', icon: '◉', href: '/annuaire' },
-            { label: 'Logistique & Stocks', icon: '⬒', href: '/logistique' },
-            { label: 'Impact RSE & Rapports', icon: '◲', href: '/analyses' },
-            { label: 'Vivier Bénévoles', icon: '♥', href: '/vivier/benevoles' },
-            { label: 'Vivier Intervenants', icon: '★', href: '/vivier/intervenants' },
         ]
     }
 
@@ -53,12 +85,13 @@ const menusPrincipaux = computed(() => {
         return [
             { label: 'Tableau de Bord', icon: '▦', href: '/dashboard' },
             { label: 'Gestion Événements', icon: '◷', href: '/evenements' },
+            { label: 'Typologies d\'Événements', icon: '▧', href: '/types-evenement' },
             { label: 'Dossiers Inscriptions', icon: '◫', href: '/inscriptions' },
             { label: 'Annuaire Participants', icon: '◉', href: '/annuaire' },
             { label: 'Validation', icon: '✓', href: '/inscriptions?statut=en_attente' },
             { label: 'Impact RSE & Rapports', icon: '◲', href: '/rapport-rse' },
-            { label: 'Vivier Bénévoles', icon: '♥', href: '/vivier/benevoles' },
-            { label: 'Vivier Intervenants', icon: '★', href: '/vivier/intervenants' },
+            { label: 'Vivier Bénévoles', icon: '⬡', href: '/vivier/benevoles' },
+            { label: 'Vivier Intervenants', icon: '◆', href: '/vivier/intervenants' },
         ]
     }
 
@@ -80,7 +113,7 @@ const menusPrincipaux = computed(() => {
         { label: 'Événements',       icon: '◷', href: '/evenements' },
         { label: 'Mes Inscriptions', icon: '◫', href: '/mes-inscriptions' },
         { label: 'Mes Enquêtes',     icon: '◧', href: '/mes-enquetes' },
-        { label: 'Mes Certificats',  icon: '🎓', href: '/mes-certificats' },
+        { label: 'Mes Certificats',  icon: '◈', href: '/mes-certificats' },
     ]
 }
 
@@ -118,19 +151,19 @@ const logout = () => router.post(route('logout'))
             <div class="border-b border-white/10 px-5 py-6">
                 <div v-if="sidebarOpen" class="flex items-center gap-3">
                     <img v-if="appSettings.logo" :src="appSettings.logo" alt="Logo"
-                        class="h-10 w-10 flex-shrink-0 rounded-lg object-contain bg-white/10 p-1" />
+                        class="h-14 w-14 flex-shrink-0 object-contain" />
                     <div class="min-w-0">
-                        <h1 class="text-xl font-extrabold tracking-tight text-white truncate">
+                        <h1 class="text-lg font-extrabold leading-snug tracking-tight text-white">
                             {{ appSettings.name || 'MOOV AFRICA' }}
                         </h1>
-                        <p class="mt-0.5 text-xs font-medium text-white/60 truncate">
+                        <p class="mt-0.5 text-xs font-medium leading-snug text-white/60">
                             {{ appSettings.slogan || 'Portail dCIRP' }}
                         </p>
                     </div>
                 </div>
                 <div v-else class="text-center">
                     <img v-if="appSettings.logo" :src="appSettings.logo" alt="Logo"
-                        class="mx-auto h-8 w-8 rounded object-contain bg-white/10 p-0.5" />
+                        class="mx-auto h-10 w-10 object-contain" />
                     <span v-else class="text-xl font-extrabold">{{ (appSettings.name || 'M')[0] }}</span>
                 </div>
             </div>
@@ -215,6 +248,58 @@ const logout = () => router.post(route('logout'))
                     </button>
 
                     <div class="flex items-center gap-4">
+
+                        <!-- Cloche de notifications -->
+                        <div ref="notifRef" class="relative">
+                            <button @click.stop="ouvrirNotifications"
+                                class="relative flex h-9 w-9 items-center justify-center rounded-full text-text-sub transition hover:bg-page-bg hover:text-moov-blue">
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                                </svg>
+                                <span v-if="notifNonVues.length > 0"
+                                    class="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                                    {{ notifNonVues.length }}
+                                </span>
+                            </button>
+
+                            <div v-if="notifOpen"
+                                class="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-xl border border-border-soft bg-white shadow-xl">
+                                <div class="border-b border-border-soft px-4 py-3">
+                                    <p class="text-sm font-bold text-text-main">Notifications</p>
+                                    <p class="text-xs text-text-sub">Actions importantes</p>
+                                </div>
+                                <div v-if="!notifications.length" class="p-6 text-center text-sm text-text-sub">
+                                    Aucune notification
+                                </div>
+                                <div v-else class="max-h-96 divide-y divide-border-soft overflow-y-auto">
+                                    <component v-for="(notif, i) in notifications" :key="i"
+                                        :is="notif.href ? Link : 'div'"
+                                        :href="notif.href"
+                                        @click="notifOpen = false"
+                                        :class="['flex items-start gap-3 border-l-4 p-3 text-left transition',
+                                            styleNotif(notif.type).border,
+                                            notif.href ? 'hover:bg-page-bg/60 cursor-pointer' : '']">
+                                        <div :class="['flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full',
+                                            styleNotif(notif.type).icon]">
+                                            <svg v-if="notif.type === 'success'" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                                            </svg>
+                                            <svg v-else-if="notif.type === 'danger'" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                            </svg>
+                                            <svg v-else-if="notif.type === 'warning'" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                            </svg>
+                                            <svg v-else class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                            </svg>
+                                        </div>
+                                        <p class="flex-1 text-sm font-semibold text-text-main">{{ notif.titre }}</p>
+                                    </component>
+                                </div>
+                            </div>
+                        </div>
+
                         <Link :href="route('evenements.index')"
                             class="text-xs font-semibold text-text-sub hover:text-moov-blue">
                             Voir le site public

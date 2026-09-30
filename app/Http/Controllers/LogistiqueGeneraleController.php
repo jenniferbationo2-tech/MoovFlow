@@ -20,7 +20,7 @@ class LogistiqueGeneraleController extends Controller
     {
         $user = Auth::user();
         abort_unless(
-            $user && $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']),
+            $user && $user->hasAnyRole(['responsable_dcirp', 'organisateur']),
             403,
             'Accès réservé au staff.'
         );
@@ -49,8 +49,8 @@ class LogistiqueGeneraleController extends Controller
 
             // Permissions
             'permissions' => [
-                'peut_creer'     => $user->hasAnyRole(['admin', 'responsable_dcirp', 'organisateur']),
-                'peut_supprimer' => $user->hasAnyRole(['admin', 'responsable_dcirp']),
+                'peut_creer'     => $user->hasAnyRole(['responsable_dcirp', 'organisateur']),
+                'peut_supprimer' => $user->hasRole('responsable_dcirp'),
             ],
         ]);
     }

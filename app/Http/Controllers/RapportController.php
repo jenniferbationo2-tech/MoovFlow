@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Evenement;
 use App\Models\Inscription;
 use App\Models\ObjectifRse;
+use App\Models\Budget;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
@@ -19,7 +20,7 @@ class RapportController extends Controller
     {
         $user = Auth::user();
         abort_unless(
-            $user && $user->hasAnyRole(['admin', 'responsable_dcirp']),
+            $user && $user->hasRole('responsable_dcirp'),
             403,
             'Accès réservé au staff dCIRP.'
         );
@@ -73,6 +74,26 @@ class RapportController extends Controller
         $totalEmplois                = (int) (clone $rseQuery)->sum('nb_emplois_crees');
         $totalCollectes              = (float) (clone $rseQuery)->sum('montants_collectes');
         $totalRetombees              = (float) (clone $rseQuery)->sum('retombees_partenaires');
+
+        // ── Budget réel depuis la table budgets ──
+        $budgetQuery = Budget::query()
+            ->join('evenements', 'evenements.id', '=', 'budgets.evenement_id');
+        if ($evenementId) {
+            $budgetQuery->where('evenements.id', $evenementId);
+        }
+        if (isset($dateMin)) {
+            $budgetQuery->where('evenements.date_debut', '>=', $dateMin);
+        }
+        $totalBudgetPrevisionnel = (float) (clone $budgetQuery)->sum('budgets.montant_previsionnel');
+
+        // Budget dépensé = somme des lignes budget de type 'depense'
+        $totalBudgetDepense = (float) \App\Models\LigneBudget::query()
+            ->join('budgets', 'budgets.id', '=', 'lignes_budget.budget_id')
+            ->join('evenements', 'evenements.id', '=', 'budgets.evenement_id')
+            ->where('lignes_budget.type', 'depense')
+            ->when($evenementId, fn($q) => $q->where('evenements.id', $evenementId))
+            ->when(isset($dateMin), fn($q) => $q->where('evenements.date_debut', '>=', $dateMin))
+            ->sum('lignes_budget.montant');
 
         $tauxFemmes = $totalBeneficiairesDirects > 0
             ? round(($totalFemmes / $totalBeneficiairesDirects) * 100, 1)
@@ -142,6 +163,11 @@ class RapportController extends Controller
                 'emplois'                 => $totalEmplois,
                 'collectes'               => $totalCollectes,
                 'retombees'               => $totalRetombees,
+                'budget_previsionnel'     => $totalBudgetPrevisionnel,
+                'budget_depense'          => $totalBudgetDepense,
+                'taux_budget'             => $totalBudgetPrevisionnel > 0
+                    ? round(($totalBudgetDepense / $totalBudgetPrevisionnel) * 100, 1)
+                    : 0,
             ],
             'evolutionMensuelle' => $evolutionMensuelle,
             'performanceTypes'   => $performanceTypes,
